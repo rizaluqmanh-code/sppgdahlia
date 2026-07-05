@@ -59,6 +59,7 @@
         </label>
         <button onclick="loadDashboard()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20 hover:shadow-emerald-600/10">Refresh</button>
         <a href="/mobile" target="_blank" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-black px-4 py-2.5 rounded-xl transition-colors">Buka Mobile PIC</a>
+        <button onclick="openManageDapurModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-950/20">Kelola Akun Dapur</button>
       </div>
     </div>
   </header>
@@ -288,6 +289,98 @@
                 <!-- JS will populate -->
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dapur Management Modal -->
+  <div id="dapurManageModal" class="fixed inset-0 z-50 hidden bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass max-w-4xl w-full rounded-2xl border border-slate-900 flex flex-col max-h-[85vh] overflow-hidden">
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-900 flex items-center justify-between">
+        <div>
+          <h2 id="dapurModalTitle" class="text-base font-black text-white">Kelola Akun & Anggaran Dapur</h2>
+          <p class="text-[11px] text-slate-400 mt-0.5 font-bold">Ubah kredensial login, nama dapur, porsi target, dan pagu anggaran 30 dapur.</p>
+        </div>
+        <button onclick="closeManageDapurModal()" class="bg-slate-900/80 text-slate-400 hover:text-white rounded-full p-2 border border-slate-800 focus:outline-none transition-colors">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Content Area -->
+      <div class="p-6 overflow-y-auto flex-1 flex flex-col min-h-0">
+        <!-- View 1: List View -->
+        <div id="dapurListView" class="flex flex-col h-full space-y-4 min-h-0">
+          <div class="flex items-center gap-3">
+            <input type="text" id="dapurSearchInput" oninput="filterDapurManageList()" placeholder="Cari nama dapur, username, atau wilayah..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors">
+          </div>
+          <div class="overflow-y-auto flex-1 border border-slate-900 rounded-xl">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-slate-900/60 text-slate-300 border-b border-slate-900 sticky top-0 backdrop-blur-md">
+                <tr>
+                  <th class="p-3 font-black">ID</th>
+                  <th class="p-3 font-black">Nama Dapur</th>
+                  <th class="p-3 font-black">Username</th>
+                  <th class="p-3 font-black">Password</th>
+                  <th class="p-3 text-right font-black">Target Porsi</th>
+                  <th class="p-3 text-right font-black">Batas Anggaran</th>
+                  <th class="p-3 text-center font-black">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="dapurManageTableBody" class="divide-y divide-slate-900">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- View 2: Edit Form View -->
+        <div id="dapurEditView" class="hidden space-y-4">
+          <div class="bg-slate-900/40 p-4 border border-slate-900 rounded-xl">
+            <h3 class="text-xs font-black text-emerald-400 uppercase tracking-wider mb-4">Edit Informasi Dapur: <span id="editDapurIdDisplay" class="text-white"></span></h3>
+            
+            <form id="dapurEditForm" onsubmit="saveDapurEdits(event)" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input type="hidden" id="editDapurId">
+              
+              <div class="space-y-1.5">
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Nama Dapur</label>
+                <input type="text" id="editDapurNama" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors">
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Wilayah</label>
+                <input type="text" id="editDapurWilayah" disabled class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-500 outline-none">
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Username / ID Login</label>
+                <input type="text" id="editDapurUsername" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors">
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Password Akun</label>
+                <input type="text" id="editDapurPassword" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors">
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Target Porsi Harian</label>
+                <input type="number" id="editDapurTargetPorsi" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors">
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Batas Anggaran Harian (RAB)</label>
+                <input type="number" id="editDapurBatasAnggaran" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors">
+              </div>
+
+              <div class="md:col-span-2 flex items-center justify-end gap-3 pt-3 border-t border-slate-900">
+                <button type="button" onclick="cancelDapurEdit()" class="bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-black px-5 py-2.5 rounded-xl transition-colors border border-slate-800">Batal</button>
+                <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20">Simpan Perubahan</button>
+              </div>
+            </form>
           </div>
         </div>
       </div>
@@ -834,6 +927,133 @@
         alert(`Error: ${err.message}`);
         btn.textContent = originalText;
         btn.disabled = false;
+      }
+    }
+
+    let globalManageDapurs = [];
+
+    async function openManageDapurModal() {
+      const tbody = document.getElementById('dapurManageTableBody');
+      tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-slate-400">Memuat data dapur...</td></tr>';
+      document.getElementById('dapurSearchInput').value = '';
+      document.getElementById('dapurListView').classList.remove('hidden');
+      document.getElementById('dapurEditView').classList.add('hidden');
+      document.getElementById('dapurManageModal').classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/dapur');
+        const json = await res.json();
+        if (!json.success) throw new Error(json.message || 'Gagal memuat dapur');
+        
+        globalManageDapurs = json.data;
+        renderDapurManageList(globalManageDapurs);
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500 font-bold">Error: ${err.message}</td></tr>`;
+      }
+    }
+
+    function closeManageDapurModal() {
+      document.getElementById('dapurManageModal').classList.add('hidden');
+    }
+
+    function renderDapurManageList(list) {
+      const tbody = document.getElementById('dapurManageTableBody');
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">Tidak ada dapur ditemukan.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map(d => {
+        return `
+          <tr class="hover:bg-slate-900/10">
+            <td class="p-3 font-bold text-white font-mono">${d.id}</td>
+            <td class="p-3 font-bold text-slate-300">${d.nama}</td>
+            <td class="p-3 font-mono text-slate-400 font-bold">${d.username}</td>
+            <td class="p-3 font-mono text-slate-400 font-bold">${d.password || '******'}</td>
+            <td class="p-3 text-right font-mono text-slate-300 font-bold">${d.targetPorsi?.toLocaleString('id-ID')}</td>
+            <td class="p-3 text-right font-mono text-emerald-400 font-bold">${formatRp(d.batasAnggaran)}</td>
+            <td class="p-3 text-center">
+              <button onclick="editDapurRow('${d.id}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black px-2.5 py-1.5 rounded-lg transition-colors">
+                Edit
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterDapurManageList() {
+      const query = document.getElementById('dapurSearchInput').value.toLowerCase().trim();
+      const filtered = globalManageDapurs.filter(d => 
+        d.id.toLowerCase().includes(query) ||
+        d.nama.toLowerCase().includes(query) ||
+        d.username.toLowerCase().includes(query) ||
+        d.wilayah.toLowerCase().includes(query)
+      );
+      renderDapurManageList(filtered);
+    }
+
+    function editDapurRow(id) {
+      const d = globalManageDapurs.find(item => item.id === id);
+      if (!d) return;
+
+      document.getElementById('editDapurId').value = d.id;
+      document.getElementById('editDapurIdDisplay').textContent = d.id;
+      document.getElementById('editDapurNama').value = d.nama;
+      document.getElementById('editDapurWilayah').value = d.wilayah;
+      document.getElementById('editDapurUsername').value = d.username;
+      document.getElementById('editDapurPassword').value = d.password || '';
+      document.getElementById('editDapurTargetPorsi').value = d.targetPorsi || 1500;
+      document.getElementById('editDapurBatasAnggaran').value = d.batasAnggaran || 13500000;
+
+      document.getElementById('dapurListView').classList.add('hidden');
+      document.getElementById('dapurEditView').classList.remove('hidden');
+    }
+
+    function cancelDapurEdit() {
+      document.getElementById('dapurListView').classList.remove('hidden');
+      document.getElementById('dapurEditView').classList.add('hidden');
+    }
+
+    async function saveDapurEdits(event) {
+      event.preventDefault();
+      const id = document.getElementById('editDapurId').value;
+      const nama = document.getElementById('editDapurNama').value;
+      const username = document.getElementById('editDapurUsername').value;
+      const password = document.getElementById('editDapurPassword').value;
+      const targetPorsi = document.getElementById('editDapurTargetPorsi').value;
+      const batasAnggaran = document.getElementById('editDapurBatasAnggaran').value;
+
+      const submitBtn = event.target.querySelector('button[type="submit"]');
+      const originalText = submitBtn.textContent;
+      submitBtn.textContent = 'Menyimpan...';
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/dapur/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nama, username, password, targetPorsi, batasAnggaran })
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.message || 'Gagal memperbarui dapur');
+
+        alert('Data dapur berhasil diperbarui!');
+        
+        const fetchRes = await fetch('/api/dapur');
+        const fetchJson = await fetchRes.json();
+        if (fetchJson.success) {
+          globalManageDapurs = fetchJson.data;
+          renderDapurManageList(globalManageDapurs);
+        }
+
+        cancelDapurEdit();
+        loadDashboard();
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
       }
     }
 

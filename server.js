@@ -60,6 +60,26 @@ let koperasiKatalog = [
   { id: 'KOP-08', namaBarang: 'Saos Tiram Saori', satuan: 'Botol', hargaSatuan: 12000 },
 ];
 
+const dapurStore = Array.from({ length: 30 }, (_, index) => {
+  const number = index + 1;
+  const padded = String(number).padStart(2, '0');
+  const wilayah = [
+    'Sumedang', 'Garut', 'Bandung', 'Tasikmalaya', 'Cimahi',
+    'Cirebon', 'Bogor', 'Depok', 'Bekasi', 'Karawang',
+  ][index % 10];
+
+  return {
+    id: `D-${padded}`,
+    username: `dapur${padded}`,
+    password: `sppg${padded}`,
+    nama: `SPPG Dapur ${padded} ${wilayah}`,
+    wilayah,
+    targetPorsi: 1500 + (index % 6) * 125,
+    batasAnggaran: 13500000 + (index % 6) * 1125000,
+    status: 'AKTIF',
+  };
+});
+
 // Inisialisasi Skema Tabel Database saat server dijalankan
 async function initDb() {
   if (!pool) {
@@ -74,6 +94,17 @@ async function initDb() {
 
     // Buat tabel-tabel utama
     await client.query(`
+      CREATE TABLE IF NOT EXISTS dapur (
+        id VARCHAR(50) PRIMARY KEY,
+        username VARCHAR(100) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        nama VARCHAR(255) NOT NULL,
+        wilayah VARCHAR(100) NOT NULL,
+        target_porsi INTEGER NOT NULL,
+        batas_anggaran NUMERIC NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'AKTIF'
+      );
+
       CREATE TABLE IF NOT EXISTS koperasi_katalog (
         id VARCHAR(50) PRIMARY KEY,
         nama_barang VARCHAR(255) NOT NULL,
@@ -143,6 +174,18 @@ async function initDb() {
       );
     `);
 
+    // Seed default dapur jika tabel dapur kosong
+    const countDapurRes = await client.query('SELECT COUNT(*) FROM dapur');
+    if (parseInt(countDapurRes.rows[0].count, 10) === 0) {
+      for (const item of dapurStore) {
+        await client.query(
+          'INSERT INTO dapur (id, username, password, nama, wilayah, target_porsi, batas_anggaran, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          [item.id, item.username, item.password, item.nama, item.wilayah, item.targetPorsi, item.batasAnggaran, item.status]
+        );
+      }
+      console.log('🌱 Seed data dapur berhasil dimasukkan ke database.');
+    }
+
     // Seed default katalog jika tabel katalog kosong
     const countRes = await client.query('SELECT COUNT(*) FROM koperasi_katalog');
     if (parseInt(countRes.rows[0].count, 10) === 0) {
@@ -165,26 +208,6 @@ async function initDb() {
 
 // Jalankan inisialisasi database
 initDb();
-
-const dapurStore = Array.from({ length: 30 }, (_, index) => {
-  const number = index + 1;
-  const padded = String(number).padStart(2, '0');
-  const wilayah = [
-    'Sumedang', 'Garut', 'Bandung', 'Tasikmalaya', 'Cimahi',
-    'Cirebon', 'Bogor', 'Depok', 'Bekasi', 'Karawang',
-  ][index % 10];
-
-  return {
-    id: `D-${padded}`,
-    username: `dapur${padded}`,
-    password: `sppg${padded}`,
-    nama: `SPPG Dapur ${padded} ${wilayah}`,
-    wilayah,
-    targetPorsi: 1500 + (index % 6) * 125,
-    batasAnggaran: 13500000 + (index % 6) * 1125000,
-    status: 'AKTIF',
-  };
-});
 
 const toNumber = (value) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -376,8 +399,27 @@ async function filterLaporanByDapur(idDapur) {
 }
 
 async function buildDapurSummary() {
+  let currentDapurs = dapurStore;
+  if (dbActive) {
+    try {
+      const res = await pool.query('SELECT * FROM dapur ORDER BY id ASC');
+      currentDapurs = res.rows.map(row => ({
+        id: row.id,
+        username: row.username,
+        password: row.password,
+        nama: row.nama,
+        wilayah: row.wilayah,
+        targetPorsi: Number(row.target_porsi),
+        batasAnggaran: Number(row.batas_anggaran),
+        status: row.status
+      }));
+    } catch (err) {
+      console.warn('Gagal memuat dapur dari DB di buildDapurSummary:', err.message);
+    }
+  }
+
   const summaries = await Promise.all(
-    dapurStore.map(async (dapur) => {
+    currentDapurs.map(async (dapur) => {
       const laporanDapur = await filterLaporanByDapur(dapur.id);
       const audit = buildAudit(laporanDapur);
       const latest = laporanDapur[0] || null;
@@ -411,17 +453,57 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.get('/api/dapur', (_req, res) => {
+app.get('/api/dapur', async (_req, res) => {
+  if (dbActive) {
+    try {
+      const result = await pool.query('SELECT * FROM dapur ORDER BY id ASC');
+      const dbDapurs = result.rows.map(row => ({
+        id: row.id,
+        username: row.username,
+        password: row.password,
+        nama: row.nama,
+        wilayah: row.wilayah,
+        targetPorsi: Number(row.target_porsi),
+        batasAnggaran: Number(row.batas_anggaran),
+        status: row.status
+      }));
+      return res.json({ success: true, data: dbDapurs.map(publicDapur) });
+    } catch (err) {
+      console.error('❌ Gagal memuat dapur dari DB:', err.message);
+    }
+  }
   res.json({ success: true, data: dapurStore.map(publicDapur) });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const username = String(req.body?.username || '').toLowerCase().trim();
   const password = String(req.body?.password || '');
 
-  const dapur = dapurStore.find(
-    (item) => item.username === username && item.password === password,
-  );
+  let dapur = null;
+  if (dbActive) {
+    try {
+      const result = await pool.query('SELECT * FROM dapur WHERE LOWER(username) = $1 AND password = $2', [username, password]);
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        dapur = {
+          id: row.id,
+          username: row.username,
+          password: row.password,
+          nama: row.nama,
+          wilayah: row.wilayah,
+          targetPorsi: Number(row.target_porsi),
+          batasAnggaran: Number(row.batas_anggaran),
+          status: row.status
+        };
+      }
+    } catch (err) {
+      console.error('❌ Gagal login dari DB:', err.message);
+    }
+  } else {
+    dapur = dapurStore.find(
+      (item) => item.username === username && item.password === password,
+    );
+  }
 
   if (!dapur) {
     return res.status(401).json({
@@ -430,7 +512,6 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // Buat Token JWT yang valid selama 7 hari
   const safeDapur = publicDapur(dapur);
   const token = jwt.sign(safeDapur, JWT_SECRET, { expiresIn: '7d' });
 
@@ -440,6 +521,56 @@ app.post('/api/auth/login', (req, res) => {
     token,
     data: safeDapur,
   });
+});
+
+app.put('/api/dapur/:id', async (req, res) => {
+  const { id } = req.params;
+  const { nama, username, password, targetPorsi, batasAnggaran } = req.body;
+
+  if (!nama || !username || !password) {
+    return res.status(400).json({ success: false, message: 'Nama, Username, dan Password wajib diisi.' });
+  }
+
+  if (!dbActive) {
+    const idx = dapurStore.findIndex(d => d.id === id);
+    if (idx !== -1) {
+      dapurStore[idx] = {
+        ...dapurStore[idx],
+        nama,
+        username: username.toLowerCase().trim(),
+        password,
+        targetPorsi: Number(targetPorsi) || dapurStore[idx].targetPorsi,
+        batasAnggaran: Number(batasAnggaran) || dapurStore[idx].batasAnggaran
+      };
+      return res.json({ success: true, message: 'Dapur berhasil diperbarui (in-memory).' });
+    }
+    return res.status(404).json({ success: false, message: 'Dapur tidak ditemukan.' });
+  }
+
+  try {
+    const checkRes = await pool.query('SELECT * FROM dapur WHERE LOWER(username) = $1 AND id <> $2', [username.toLowerCase().trim(), id]);
+    if (checkRes.rows.length > 0) {
+      return res.status(400).json({ success: false, message: 'Username sudah digunakan oleh dapur lain.' });
+    }
+
+    await pool.query(
+      `UPDATE dapur 
+       SET nama = $1, username = $2, password = $3, target_porsi = $4, batas_anggaran = $5
+       WHERE id = $6`,
+      [
+        nama, 
+        username.toLowerCase().trim(), 
+        password, 
+        Number(targetPorsi) || 1500, 
+        Number(batasAnggaran) || 13500000, 
+        id
+      ]
+    );
+    res.json({ success: true, message: 'Data dapur berhasil diperbarui.' });
+  } catch (err) {
+    console.error('❌ Gagal memperbarui data dapur:', err.message);
+    res.status(500).json({ success: false, message: 'Gagal memperbarui data dapur ke database.' });
+  }
 });
 
 app.post('/api/laporan', authenticateToken, async (req, res) => {
