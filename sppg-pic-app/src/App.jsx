@@ -61,16 +61,17 @@ function buildRowKey(item, index) {
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [username, setUsername] = useState('demo');
-  const [password, setPassword] = useState('demo');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [sessionDapur, setSessionDapur] = useState(demoSession);
   const [availableDapurs, setAvailableDapurs] = useState(demoDapurs);
   const [selectedDapurId, setSelectedDapurId] = useState('');
   const [currentPage, setCurrentPage] = useState('beranda');
   const [selectedHari, setSelectedHari] = useState('SENIN');
   const [isLoading, setIsLoading] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('Mode demo lokal siap dipakai.');
-  const [backendStatus, setBackendStatus] = useState('Mengecek backend...');
+  const [syncStatus, setSyncStatus] = useState('');
+  const [backendStatus, setBackendStatus] = useState('Mengecek koneksi backend...');
 
   const [rabData, setRabData] = useState(demoRab);
   const [bomList, setBomList] = useState(demoBom);
@@ -218,6 +219,13 @@ function App() {
 
   const handleLogin = async (event) => {
     event.preventDefault();
+    setLoginError('');
+
+    if (!username.trim() || !password) {
+      setLoginError('Username dan password wajib diisi.');
+      return;
+    }
+
     setIsLoading(true);
 
     const applyDapurSession = (selected, message) => {
@@ -238,55 +246,42 @@ function App() {
     };
 
     try {
+      // Coba login ke backend lokal terlebih dahulu
       const loginResponse = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          password,
-          idDapur: selectedDapurId,
-        }),
+        body: JSON.stringify({ username, password }),
       });
       const loginJson = await loginResponse.json();
       if (!loginResponse.ok || !loginJson.success) {
         throw new Error(loginJson.message || 'Login gagal.');
       }
-
-      applyDapurSession(loginJson.data, `Login aktif untuk ${loginJson.data.nama}.`);
+      applyDapurSession(loginJson.data, `Selamat datang, ${loginJson.data.nama}.`);
     } catch (localError) {
-      if (username.trim().toLowerCase() === 'demo' && password === 'demo') {
-        // BUG FIX: demoDapurs = [] → demoDapurs[0] = undefined → crash di applyDapurSession
-        const selected = availableDapurs.find((dapur) => dapur.id === selectedDapurId) || availableDapurs[0] || demoDapurs[0];
-        if (!selected) {
-          alert('Backend belum aktif dan tidak ada data dapur tersedia. Jalankan "npm start" di folder server terlebih dahulu.');
-          setIsLoading(false);
-          return;
-        }
-        applyDapurSession(selected, `Login demo offline aktif untuk ${selected.nama}.`);
-      } else if (URL_AUTH_YAYASAN) {
+      // Jika backend offline, coba fallback ke Google Sheets Auth
+      if (URL_AUTH_YAYASAN) {
         try {
           const response = await fetch(URL_AUTH_YAYASAN);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (!response.ok) throw new Error(`Server auth tidak dapat dihubungi (HTTP ${response.status}).`);
           const dataMaster = await response.json();
           const akunDitemukan = (dataMaster.payloadAkun || []).find(
             (akun) => akun.username?.toLowerCase().trim() === username.toLowerCase().trim()
               && akun.password === password,
           );
-
           if (!akunDitemukan) throw new Error('Username atau password salah.');
-
           setSessionDapur({
             id: akunDitemukan.idDapur,
+            username: akunDitemukan.username || '',
             nama: akunDitemukan.namaDapur,
             urlApi: akunDitemukan.urlApiDapur,
           });
           setIsLoggedIn(true);
-          setSyncStatus(`Login berhasil untuk ${akunDitemukan.namaDapur}.`);
+          setSyncStatus(`Selamat datang, ${akunDitemukan.namaDapur}.`);
         } catch (sheetError) {
-          alert(`Gagal login: ${sheetError.message}`);
+          setLoginError(sheetError.message);
         }
       } else {
-        alert(`Gagal login lokal: ${localError.message}`);
+        setLoginError(localError.message);
       }
     } finally {
       setIsLoading(false);
@@ -768,65 +763,101 @@ function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-slate-200 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm bg-slate-950 text-white rounded-[2rem] shadow-2xl border-8 border-slate-900 p-7">
-          <div className="mb-8">
-            <p className="text-xs font-bold text-emerald-400 uppercase tracking-[0.2em]">SPPG Control Suite</p>
-            <h1 className="text-3xl font-black mt-2">PIC Dapur</h1>
-            <p className="text-xs text-slate-400 mt-2">Gunakan demo/demo, atau akun dapur lokal seperti dapur01/sppg01 sampai dapur30/sppg30.</p>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          {/* Logo / Brand */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 mb-4">
+              <span className="text-3xl">🍽️</span>
+            </div>
+            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-emerald-400">SPPG Control Suite</p>
+            <h1 className="text-2xl font-black text-white mt-1">Portal PIC Dapur</h1>
+            <p className="text-xs text-slate-500 mt-2">Masuk menggunakan akun yang diberikan koordinator.</p>
           </div>
-          <form onSubmit={handleLogin} className="space-y-3">
-            <label className="block">
-              <span className="block text-[10px] font-black uppercase tracking-wide text-slate-400 mb-1">Pilih Dapur Demo</span>
-              <select
-                value={selectedDapurId}
-                onChange={(event) => setSelectedDapurId(event.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-500"
-              >
-                {availableDapurs.map((dapur) => (
-                  <option key={dapur.id} value={dapur.id}>
-                    {dapur.id} - {dapur.nama}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <input
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-500"
-              placeholder="username"
-            />
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-500"
-              placeholder="password"
-            />
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 rounded-xl py-3.5 text-xs font-black uppercase tracking-widest"
-            >
-              {isLoading ? 'Memverifikasi...' : 'Masuk Sistem'}
-            </button>
-          </form>
-          <p className="mt-5 text-[10px] text-slate-500">{backendStatus}</p>
 
+          {/* Card login */}
+          <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6 shadow-2xl">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                  Username Dapur
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => { setUsername(e.target.value); setLoginError(''); }}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-600"
+                  placeholder="contoh: dapur01"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setLoginError(''); }}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-600"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+              </div>
+
+              {/* Error message */}
+              {loginError && (
+                <div className="bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3 flex items-start gap-2">
+                  <span className="text-red-400 mt-0.5">⚠️</span>
+                  <p className="text-[11px] text-red-400 font-bold">{loginError}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl py-3.5 text-sm font-black uppercase tracking-widest text-white transition-all mt-2"
+              >
+                {isLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Memverifikasi...
+                  </span>
+                ) : 'Masuk Sistem'}
+              </button>
+            </form>
+
+            {/* Status backend */}
+            <div className="mt-5 pt-4 border-t border-slate-800 flex items-center gap-2">
+              <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                backendStatus.includes('aktif') || backendStatus.includes('Backend') && !backendStatus.includes('belum')
+                  ? 'bg-emerald-500 animate-pulse'
+                  : 'bg-slate-600'
+              }`} />
+              <p className="text-[10px] text-slate-500 truncate">{backendStatus}</p>
+            </div>
+          </div>
+
+          {/* PWA Install */}
           {deferredPrompt && (
-            <div className="mt-6 pt-5 border-t border-slate-800">
+            <div className="mt-4">
               <button
                 onClick={handleInstallPWA}
-                className="w-full bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-emerald-500/20 rounded-xl py-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                className="w-full bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-800 rounded-2xl py-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
               >
-                <span>📥</span> Instal Aplikasi SPPG di HP
+                <span>📥</span> Instal Aplikasi di HP
               </button>
             </div>
           )}
 
           {/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream && !(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) && (
-            <div className="mt-6 p-3 bg-emerald-950/40 border border-emerald-500/20 rounded-xl text-[10px] text-slate-300">
-              💡 <span className="font-bold text-emerald-400">Instal di iPhone:</span> Klik tombol <span className="font-bold text-white">Share</span> di bagian bawah Safari (kotak dengan panah atas), lalu pilih <span className="font-bold text-emerald-400">"Add to Home Screen"</span>.
+            <div className="mt-4 p-3 bg-emerald-950/40 border border-emerald-900/50 rounded-2xl text-[10px] text-slate-400 text-center">
+              💡 Instal di iPhone: tap <strong className="text-white">Share</strong> → <strong className="text-emerald-400">Add to Home Screen</strong>
             </div>
           )}
         </div>

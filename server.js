@@ -166,16 +166,6 @@ app.get('/api/dapur', (_req, res) => {
 app.post('/api/auth/login', (req, res) => {
   const username = String(req.body?.username || '').toLowerCase().trim();
   const password = String(req.body?.password || '');
-  const selectedDapurId = String(req.body?.idDapur || '');
-
-  if (username === 'demo' && password === 'demo') {
-    const selected = dapurStore.find((dapur) => dapur.id === selectedDapurId) || dapurStore[0];
-    return res.json({
-      success: true,
-      message: 'Login demo berhasil.',
-      data: publicDapur(selected),
-    });
-  }
 
   const dapur = dapurStore.find(
     (item) => item.username === username && item.password === password,
@@ -184,13 +174,13 @@ app.post('/api/auth/login', (req, res) => {
   if (!dapur) {
     return res.status(401).json({
       success: false,
-      message: 'Username atau password dapur salah.',
+      message: 'Username atau password salah.',
     });
   }
 
   res.json({
     success: true,
-    message: 'Login dapur berhasil.',
+    message: 'Login berhasil.',
     data: publicDapur(dapur),
   });
 });
