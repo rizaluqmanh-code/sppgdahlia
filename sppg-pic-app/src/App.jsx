@@ -44,14 +44,20 @@ function fileToDataUrl(file) {
 function normalizeBom(items = []) {
   return items.map((item, index) => ({
     id: item.id || `${index + 1}`,
-    hariMasak: item.hariMasak || item.hari || 'HARI INI',
+    // Support: hariMasak (Sheets aktual) | hari (alias lama)
+    hariMasak: (item.hariMasak || item.hari || 'HARI INI').toUpperCase().trim(),
+    // Tambah tanggalMasak dari Sheets
+    tanggalMasak: item.tanggalMasak || '',
     namaBarang: item.namaBarang || item.nama || `Bahan ${index + 1}`,
     qtyRencana: toNumber(item.qtyRencana ?? item.qty_rencana ?? item.qty),
     satuan: item.satuan || '',
-    hargaRab: toNumber(item.hargaRab ?? item.harga_rab ?? item.harga_rencana ?? item.hargaEstimasi),
+    // Support: hargaEstimasi (Sheets aktual) | hargaRab | harga_rab | harga_rencana
+    hargaRab: toNumber(item.hargaRab ?? item.harga_rab ?? item.harga_rencana ?? item.hargaEstimasi ?? 0),
+    // tipe: Sheets belum kirim field ini, default basah (beli di luar)
     tipe: item.tipe || 'basah',
-    targetPorsi: toNumber(item.targetPorsi),
-    batasAnggaran: toNumber(item.batasAnggaran),
+    // targetPorsi & batasAnggaran bisa ada per-item atau dari root response
+    targetPorsi: toNumber(item.targetPorsi ?? item.target_porsi ?? 0),
+    batasAnggaran: toNumber(item.batasAnggaran ?? item.pagu_rab ?? item.batas_anggaran ?? 0),
   }));
 }
 
@@ -193,22 +199,41 @@ function App() {
 
     const syncSheets = async () => {
       setIsLoading(true);
+      setSyncStatus('Mengambil data RAB dari Spreadsheet...');
       try {
         const response = await fetch(sessionDapur.urlApi);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        const liveBom = normalizeBom(data.dataRAB || data.items || []);
 
-        setRabData({
-          targetPorsi: toNumber(data.targetPorsi || data.total_pm || demoRab.targetPorsi),
-          batasAnggaran: toNumber(data.batasAnggaran || data.pagu_rab || demoRab.batasAnggaran),
-        });
-        setBomList(liveBom.length ? liveBom : demoBom);
-        setSyncStatus(`Sinkron Sheets berhasil: ${liveBom.length || demoBom.length} baris RAB.`);
+        // Support berbagai struktur response Google Sheets:
+        // { dataRAB: [...] } | { items: [...] } | [...] (array langsung)
+        const rawItems = data.dataRAB || data.items || (Array.isArray(data) ? data : []);
+        const liveBom = normalizeBom(rawItems);
+
+        // Ambil targetPorsi & batasAnggaran:
+        // Prioritas 1: dari field root response
+        // Prioritas 2: dari item pertama dalam array (jika ada)
+        // Prioritas 3: 0
+        const firstItem = rawItems[0] || {};
+        const targetPorsi = toNumber(
+          data.targetPorsi ?? data.total_pm ?? data.target_porsi
+          ?? firstItem.targetPorsi ?? firstItem.target_porsi ?? 0
+        );
+        const batasAnggaran = toNumber(
+          data.batasAnggaran ?? data.pagu_rab ?? data.batas_anggaran
+          ?? firstItem.batasAnggaran ?? firstItem.pagu_rab ?? 0
+        );
+
+        setRabData({ targetPorsi, batasAnggaran });
+        setBomList(liveBom.length ? liveBom : []);
+        setSyncStatus(
+          liveBom.length
+            ? `✓ ${liveBom.length} bahan RAB berhasil dimuat dari Spreadsheet.`
+            : 'Spreadsheet terhubung tapi belum ada data RAB.'
+        );
       } catch (error) {
-        setRabData(demoRab);
-        setBomList(demoBom);
-        setSyncStatus(`Sheets belum bisa dibaca, memakai data demo lokal. (${error.message})`);
+        setBomList([]);
+        setSyncStatus(`Gagal memuat RAB dari Spreadsheet: ${error.message}`);
       } finally {
         setIsLoading(false);
       }
@@ -885,15 +910,25 @@ function App() {
         </header>
 
         <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex gap-1.5 overflow-x-auto shrink-0 scrollbar-none">
-          {['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT'].map((day) => (
-            <button
-              key={day}
-              onClick={() => setSelectedHari(day)}
-              className={`rounded-xl px-4 py-2 text-[10px] font-black tracking-wider uppercase transition-all ${selectedHari === day ? 'bg-emerald-700 text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}
-            >
-              {day}
-            </button>
-          ))}
+          {['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT'].map((day) => {
+            const dayItems = bomList.filter(i => (i.hariMasak || '').toUpperCase() === day);
+            return (
+              <button
+                key={day}
+                onClick={() => setSelectedHari(day)}
+                className={`flex-shrink-0 rounded-xl px-4 py-2 text-[10px] font-black tracking-wider uppercase transition-all ${
+                  selectedHari === day ? 'bg-emerald-700 text-white shadow-sm' : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                <span>{day}</span>
+                {dayItems.length > 0 && (
+                  <span className={`block text-[8px] font-bold mt-0.5 ${
+                    selectedHari === day ? 'text-emerald-200' : 'text-slate-400'
+                  }`}>{dayItems[0].tanggalMasak || `${dayItems.length} bhn`}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <main className="flex-1 overflow-y-auto pb-24">
@@ -908,26 +943,52 @@ function App() {
 
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <h2 className="text-sm font-black text-slate-800">Daftar RAB/BOM</h2>
+                  <div>
+                    <h2 className="text-sm font-black text-slate-800">Daftar RAB/BOM</h2>
+                    {activeBomList.length > 0 && activeBomList[0].tanggalMasak && (
+                      <p className="text-[10px] text-slate-500 mt-0.5">📅 {activeBomList[0].tanggalMasak}</p>
+                    )}
+                  </div>
                   <button onClick={fillRabAsReal} className="text-[10px] font-bold bg-slate-900 text-white px-3 py-1.5 rounded-lg">
                     Isi dari RAB
                   </button>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {activeBomList.length === 0 ? (
+                  {bomList.length === 0 ? (
+                    <div className="p-6 text-center">
+                      <p className="text-xs text-slate-400">{syncStatus || 'Data RAB belum dimuat.'}</p>
+                      {sessionDapur.urlApi && (
+                        <button
+                          onClick={() => { setIsLoggedIn(false); setTimeout(() => setIsLoggedIn(true), 50); }}
+                          className="mt-3 text-[10px] font-bold text-emerald-600 underline"
+                        >
+                          Coba sync ulang
+                        </button>
+                      )}
+                    </div>
+                  ) : activeBomList.length === 0 ? (
                     <div className="p-4 text-center text-xs text-slate-400">
-                      Tidak ada rencana belanja (RAB) untuk hari {selectedHari}.
+                      Tidak ada bahan RAB untuk hari <strong>{selectedHari}</strong>.
                     </div>
                   ) : (
-                    activeBomList.map((item, index) => (
-                      <div key={buildRowKey(item, index)} className="p-3 flex justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-black text-slate-800">{item.namaBarang}</p>
-                          <p className="text-[10px] text-slate-500">{item.qtyRencana} {item.satuan} x {formatRp(item.hargaRab)}</p>
+                    <>
+                      {activeBomList.map((item, index) => (
+                        <div key={buildRowKey(item, index)} className="px-4 py-3 flex justify-between items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-slate-800 truncate">{item.namaBarang}</p>
+                            <p className="text-[10px] text-slate-500">{item.qtyRencana} {item.satuan} × {formatRp(item.hargaRab)}</p>
+                          </div>
+                          <p className="text-xs font-black text-emerald-700 flex-shrink-0">{formatRp(item.qtyRencana * item.hargaRab)}</p>
                         </div>
-                          <p className="text-xs font-black text-emerald-700">{formatRp(item.qtyRencana * item.hargaRab)}</p>
+                      ))}
+                      {/* Total RAB hari ini */}
+                      <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                        <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Total RAB {selectedHari}</p>
+                        <p className="text-sm font-black text-slate-800">
+                          {formatRp(activeBomList.reduce((sum, i) => sum + i.qtyRencana * i.hargaRab, 0))}
+                        </p>
                       </div>
-                    ))
+                    </>
                   )}
                 </div>
               </div>
