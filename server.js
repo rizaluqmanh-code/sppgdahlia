@@ -1,6 +1,8 @@
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const { Pool } = require('pg');
@@ -12,9 +14,18 @@ try {
   GoogleGenAI = null;
 }
 
+const JWT_SECRET = process.env.JWT_SECRET || 'sppg_super_secret_key_13579';
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Setup directory uploads untuk foto fisik
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
 
 const ai = process.env.GEMINI_API_KEY && GoogleGenAI
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
@@ -37,6 +48,7 @@ if (process.env.DATABASE_URL) {
 // Global In-Memory Fallback Stores (Tetap digunakan jika database offline)
 let laporanStore = [];
 let orderStore = [];
+let gudangStokStore = [];
 let koperasiKatalog = [
   { id: 'KOP-01', namaBarang: 'Beras Medium', satuan: 'Kg', hargaSatuan: 14000 },
   { id: 'KOP-02', namaBarang: 'Telur Ayam', satuan: 'Kg', hargaSatuan: 26000 },
@@ -67,6 +79,15 @@ async function initDb() {
         nama_barang VARCHAR(255) NOT NULL,
         satuan VARCHAR(50) NOT NULL,
         harga_satuan NUMERIC NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS gudang_stok (
+        id_dapur VARCHAR(50) NOT NULL,
+        nama_barang VARCHAR(255) NOT NULL,
+        qty NUMERIC NOT NULL,
+        satuan VARCHAR(50) NOT NULL,
+        harga_satuan NUMERIC NOT NULL,
+        PRIMARY KEY (id_dapur, nama_barang)
       );
 
       CREATE TABLE IF NOT EXISTS laporan (
@@ -178,6 +199,51 @@ const formatDateKey = (value = new Date()) => {
   if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
   return date.toISOString().slice(0, 10);
 };
+
+// Helper untuk mendekode gambar base64 dan menyimpannya secara fisik di disk server
+function saveBase64Image(base64Str, prefix) {
+  if (!base64Str || typeof base64Str !== 'string') return base64Str;
+  if (!base64Str.startsWith('data:image')) {
+    // Jika sudah berupa URL path relatif (/uploads/...) kembalikan saja
+    return base64Str;
+  }
+
+  try {
+    const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return base64Str;
+
+    const ext = matches[1].split('/')[1] || 'jpg';
+    const imageBuffer = Buffer.from(matches[2], 'base64');
+    
+    // Tentukan nama file yang unik
+    const filename = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
+    const filepath = path.join(uploadsDir, filename);
+
+    fs.writeFileSync(filepath, imageBuffer);
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.error('⚠️ Gagal menyimpan base64 ke disk server:', err.message);
+    return base64Str;
+  }
+}
+
+// Middleware otentikasi token JWT untuk mengamankan API
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Token autentikasi tidak ditemukan. Silakan login kembali.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ success: false, error: 'Sesi kedaluwarsa atau token tidak valid. Silakan login ulang.' });
+    }
+    req.user = decoded;
+    next();
+  });
+}
 
 function normalizeItems(items = []) {
   return items.map((item, index) => {
@@ -364,14 +430,19 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
+  // Buat Token JWT yang valid selama 7 hari
+  const safeDapur = publicDapur(dapur);
+  const token = jwt.sign(safeDapur, JWT_SECRET, { expiresIn: '7d' });
+
   res.json({
     success: true,
     message: 'Login berhasil.',
-    data: publicDapur(dapur),
+    token,
+    data: safeDapur,
   });
 });
 
-app.post('/api/laporan', async (req, res) => {
+app.post('/api/laporan', authenticateToken, async (req, res) => {
   const payload = req.body || {};
   const items = normalizeItems(payload.items || (payload.namaBarang ? [payload] : []));
 
@@ -383,15 +454,31 @@ app.post('/api/laporan', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Minimal satu item laporan wajib dikirim.' });
   }
 
+  const laporanId = `LAP-${Date.now()}`;
+
+  // Simpan foto nota biner ke disk secara fisik
+  const processedItems = items.map((item, index) => {
+    if (item.fotoNota) {
+      const sanitizedItemName = String(item.namaBarang).replace(/[^a-zA-Z0-9_-]/g, '_');
+      item.fotoNota = saveBase64Image(item.fotoNota, `nota-${laporanId}-${index}-${sanitizedItemName}`);
+    }
+    return item;
+  });
+
+  // Simpan foto masakan matang biner ke disk secara fisik
+  const processedFotoMasakan = payload.fotoMasakan
+    ? saveBase64Image(payload.fotoMasakan, `masakan-${laporanId}`)
+    : null;
+
   const laporan = {
-    id: `LAP-${Date.now()}`,
+    id: laporanId,
     idDapur: payload.idDapur || payload.dapur,
     namaDapur: payload.namaDapur || payload.dapur || payload.idDapur,
     tanggalInput: formatDateKey(payload.tanggalInput),
     targetPorsi: toNumber(payload.targetPorsi),
     batasAnggaran: toNumber(payload.batasAnggaran),
-    fotoMasakan: payload.fotoMasakan || null,
-    items,
+    fotoMasakan: processedFotoMasakan,
+    items: processedItems,
     createdAt: new Date().toISOString(),
   };
 
@@ -457,6 +544,47 @@ app.post('/api/laporan', async (req, res) => {
     }
   } else {
     laporanStore.unshift(laporan);
+  }
+
+  // Pengurangan kuantitas stok gudang untuk item-item yang bersumber dari AMBIL_GUDANG
+  for (const item of items) {
+    if (item.sumber === 'AMBIL_GUDANG') {
+      const decreaseQty = item.qty;
+      if (dbActive) {
+        try {
+          const currentRes = await pool.query(
+            'SELECT qty FROM gudang_stok WHERE id_dapur = $1 AND nama_barang = $2',
+            [laporan.idDapur, item.namaBarang]
+          );
+          if (currentRes.rows.length > 0) {
+            const currentQty = Number(currentRes.rows[0].qty);
+            const newQty = Math.max(0, currentQty - decreaseQty);
+            if (newQty <= 0) {
+              await pool.query(
+                'DELETE FROM gudang_stok WHERE id_dapur = $1 AND nama_barang = $2',
+                [laporan.idDapur, item.namaBarang]
+              );
+            } else {
+              await pool.query(
+                'UPDATE gudang_stok SET qty = $1 WHERE id_dapur = $2 AND nama_barang = $3',
+                [newQty, laporan.idDapur, item.namaBarang]
+              );
+            }
+          }
+        } catch (stokErr) {
+          console.error('❌ Gagal memotong stok gudang di database:', stokErr.message);
+        }
+      } else {
+        // Fallback RAM
+        const idx = gudangStokStore.findIndex(g => g.idDapur === laporan.idDapur && g.namaBarang === item.namaBarang);
+        if (idx !== -1) {
+          gudangStokStore[idx].qty = Math.max(0, gudangStokStore[idx].qty - decreaseQty);
+          if (gudangStokStore[idx].qty <= 0) {
+            gudangStokStore.splice(idx, 1);
+          }
+        }
+      }
+    }
   }
 
   // INTEGRASI KLED0: Otomatis sinkronisasi biaya belanja ke Kledo di background
@@ -532,6 +660,104 @@ app.get('/api/dashboard', async (_req, res) => {
       laporan: reports,
     },
   });
+});
+
+// =========================================================================
+// GUDANG STOK APIS
+// =========================================================================
+app.get('/api/gudang/stok', authenticateToken, async (req, res) => {
+  const idDapur = req.query.idDapur;
+  if (!idDapur) {
+    return res.status(400).json({ success: false, error: 'idDapur wajib diisi.' });
+  }
+
+  if (dbActive) {
+    try {
+      const resDb = await pool.query(
+        'SELECT nama_barang AS "namaBarang", qty, satuan, harga_satuan AS "hargaSatuan" FROM gudang_stok WHERE id_dapur = $1 ORDER BY nama_barang ASC',
+        [idDapur]
+      );
+      return res.json({ success: true, data: resDb.rows.map(r => ({ ...r, qty: Number(r.qty), hargaSatuan: Number(r.hargaSatuan) })) });
+    } catch (err) {
+      console.error('❌ Gagal membaca gudang_stok dari DB:', err.message);
+    }
+  }
+
+  // Fallback RAM
+  const filtered = gudangStokStore.filter(item => item.idDapur === idDapur);
+  res.json({ success: true, data: filtered });
+});
+
+app.post('/api/gudang/stok', authenticateToken, async (req, res) => {
+  const { idDapur, items } = req.body || {};
+  if (!idDapur || !Array.isArray(items)) {
+    return res.status(400).json({ success: false, error: 'idDapur dan items array wajib diisi.' });
+  }
+
+  if (dbActive) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const item of items) {
+        const qty = toNumber(item.qty);
+        const hargaSatuan = toNumber(item.hargaSatuan);
+        
+        // Simpan foto nota jika ada di input stok mandiri
+        let processedFotoNota = item.fotoNota || null;
+        if (processedFotoNota && processedFotoNota.startsWith('data:image')) {
+          processedFotoNota = saveBase64Image(processedFotoNota, `nota-gudang-${idDapur}`);
+        }
+
+        if (qty <= 0) {
+          // Hapus dari stok jika qty <= 0
+          await client.query(
+            'DELETE FROM gudang_stok WHERE id_dapur = $1 AND nama_barang = $2',
+            [idDapur, item.namaBarang]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO gudang_stok (id_dapur, nama_barang, qty, satuan, harga_satuan)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id_dapur, nama_barang)
+             DO UPDATE SET qty = EXCLUDED.qty, harga_satuan = EXCLUDED.harga_satuan, satuan = EXCLUDED.satuan`,
+            [idDapur, item.namaBarang, qty, item.satuan || '', hargaSatuan]
+          );
+        }
+      }
+      await client.query('COMMIT');
+      client.release();
+    } catch (err) {
+      await client.query('ROLLBACK');
+      client.release();
+      console.error('❌ Gagal menyimpan/mengupdate gudang_stok ke DB:', err.message);
+      return res.status(500).json({ success: false, error: 'Gagal memperbarui stok di database.' });
+    }
+  } else {
+    // Fallback RAM
+    for (const item of items) {
+      const qty = toNumber(item.qty);
+      const idx = gudangStokStore.findIndex(g => g.idDapur === idDapur && g.namaBarang === item.namaBarang);
+      
+      if (qty <= 0) {
+        if (idx !== -1) gudangStokStore.splice(idx, 1);
+      } else {
+        const newStok = {
+          idDapur,
+          namaBarang: item.namaBarang,
+          qty,
+          satuan: item.satuan || '',
+          hargaSatuan: toNumber(item.hargaSatuan)
+        };
+        if (idx !== -1) {
+          gudangStokStore[idx] = newStok;
+        } else {
+          gudangStokStore.push(newStok);
+        }
+      }
+    }
+  }
+
+  res.json({ success: true, message: 'Stok berhasil diperbarui.' });
 });
 
 // =========================================================================

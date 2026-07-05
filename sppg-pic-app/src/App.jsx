@@ -68,11 +68,15 @@ function buildRowKey(item, index) {
 }
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [token, setToken] = useState(() => sessionStorage.getItem('sppg_token') || '');
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!sessionStorage.getItem('sppg_token'));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [sessionDapur, setSessionDapur] = useState(demoSession);
+  const [sessionDapur, setSessionDapur] = useState(() => {
+    const saved = sessionStorage.getItem('sppg_session_dapur');
+    return saved ? JSON.parse(saved) : demoSession;
+  });
   const [availableDapurs, setAvailableDapurs] = useState(demoDapurs);
   const [selectedDapurId, setSelectedDapurId] = useState('');
   const [currentPage, setCurrentPage] = useState('beranda');
@@ -80,6 +84,30 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const [backendStatus, setBackendStatus] = useState('Mengecek koneksi backend...');
+
+  // Helper fetch dengan Authorization Header JWT Token
+  const authFetch = async (url, options = {}) => {
+    const savedToken = sessionStorage.getItem('sppg_token') || token;
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+    if (savedToken) {
+      headers['Authorization'] = `Bearer ${savedToken}`;
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401 || res.status === 403) {
+      // Sesi kedaluwarsa atau tidak sah, logout otomatis
+      sessionStorage.removeItem('sppg_token');
+      sessionStorage.removeItem('sppg_session_dapur');
+      setToken('');
+      setIsLoggedIn(false);
+      setSessionDapur(demoSession);
+      alert('Sesi masuk Anda telah berakhir. Silakan login kembali.');
+      throw new Error('Sesi kedaluwarsa.');
+    }
+    return res;
+  };
 
   const [rabData, setRabData] = useState(demoRab);
   const [bomList, setBomList] = useState(demoBom);
@@ -122,18 +150,7 @@ function App() {
     console.log(`User choice outcome: ${outcome}`);
     setDeferredPrompt(null);
   };
-  const [stock, setStock] = useState(() => {
-    try {
-      const local = localStorage.getItem('sppg_gudang_stok');
-      return local ? JSON.parse(local) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('sppg_gudang_stok', JSON.stringify(stock));
-  }, [stock]);
+  const [stock, setStock] = useState([]);
 
   const [newStockNama, setNewStockNama] = useState('');
   const [newStockQty, setNewStockQty] = useState('');
@@ -149,7 +166,7 @@ function App() {
 
   const fetchKatalog = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/koperasi/katalog`);
+      const res = await authFetch(`${API_BASE}/api/koperasi/katalog`);
       const d = await res.json();
       if (d.success) setKatalog(d.data);
     } catch (e) {
@@ -160,7 +177,7 @@ function App() {
   const fetchShippedOrders = async () => {
     if (!sessionDapur.id) return;
     try {
-      const res = await fetch(`${API_BASE}/api/koperasi/order?idDapur=${sessionDapur.id}&status=DIKIRIM`);
+      const res = await authFetch(`${API_BASE}/api/koperasi/order?idDapur=${sessionDapur.id}&status=DIKIRIM`);
       const d = await res.json();
       if (d.success) setShippedOrders(d.data);
     } catch (e) {
@@ -168,10 +185,22 @@ function App() {
     }
   };
 
+  const fetchStock = async () => {
+    if (!sessionDapur.id) return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/gudang/stok?idDapur=${sessionDapur.id}`);
+      const d = await res.json();
+      if (d.success) setStock(d.data);
+    } catch (e) {
+      console.warn('Gagal fetch stok dari database server:', e);
+    }
+  };
+
   useEffect(() => {
     if (isLoggedIn) {
       fetchKatalog();
       fetchShippedOrders();
+      fetchStock();
     }
   }, [isLoggedIn, currentPage, sessionDapur.id]);
 
@@ -255,14 +284,22 @@ function App() {
 
     setIsLoading(true);
 
-    const applyDapurSession = (selected, message) => {
+    const applyDapurSession = (selected, tokenVal, message) => {
       const finalUrlApi = selected.urlApi || (CENTRAL_SPREADSHEET_URL ? `${CENTRAL_SPREADSHEET_URL}?dapur=${selected.username || selected.id}` : '');
-      setSessionDapur({
+      const finalSession = {
         id: selected.id,
         username: selected.username || '',
         nama: selected.nama,
         urlApi: finalUrlApi,
-      });
+      };
+      
+      sessionStorage.setItem('sppg_session_dapur', JSON.stringify(finalSession));
+      if (tokenVal) {
+        sessionStorage.setItem('sppg_token', tokenVal);
+        setToken(tokenVal);
+      }
+      
+      setSessionDapur(finalSession);
       setRabData({
         targetPorsi: selected.targetPorsi || demoRab.targetPorsi,
         batasAnggaran: selected.batasAnggaran || demoRab.batasAnggaran,
@@ -283,7 +320,7 @@ function App() {
       if (!loginResponse.ok || !loginJson.success) {
         throw new Error(loginJson.message || 'Login gagal.');
       }
-      applyDapurSession(loginJson.data, `Selamat datang, ${loginJson.data.nama}.`);
+      applyDapurSession(loginJson.data, loginJson.token, `Selamat datang, ${loginJson.data.nama}.`);
     } catch (localError) {
       // Jika backend offline, coba fallback ke Google Sheets Auth
       if (URL_AUTH_YAYASAN) {
@@ -456,9 +493,8 @@ function App() {
         ]
       };
 
-      const backendRes = await fetch(`${API_BASE}/api/laporan`, {
+      const backendRes = await authFetch(`${API_BASE}/api/laporan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(localPayload)
       });
       if (!backendRes.ok) throw new Error('Gagal mencatat transaksi di server lokal');
@@ -483,30 +519,29 @@ function App() {
         });
       }
 
-      // 3. Update stok lokal di HP
-      setStock((prev) => {
-        const existingIndex = prev.findIndex(item => item.namaBarang.toLowerCase() === namaNormal.toLowerCase());
-        if (existingIndex > -1) {
-          const updated = [...prev];
-          const oldItem = updated[existingIndex];
-          const totalQty = oldItem.qty + qtyNum;
-          const avgPrice = totalQty > 0 ? ((oldItem.qty * oldItem.hargaSatuan) + (qtyNum * priceUnit)) / totalQty : priceUnit;
-          updated[existingIndex] = {
-            ...oldItem,
-            qty: totalQty,
-            hargaSatuan: Math.round(avgPrice),
-            satuan: newStockSatuan || oldItem.satuan
-          };
-          return updated;
-        } else {
-          return [...prev, {
+      // 3. Simpan perubahan stok ke database server (/api/gudang/stok)
+      const existingItem = stock.find(item => item.namaBarang.toLowerCase() === namaNormal.toLowerCase());
+      const oldQty = existingItem ? existingItem.qty : 0;
+      const oldPrice = existingItem ? existingItem.hargaSatuan : 0;
+      const totalQty = oldQty + qtyNum;
+      const avgPrice = totalQty > 0 ? ((oldQty * oldPrice) + (qtyNum * priceUnit)) / totalQty : priceUnit;
+
+      const dbStokRes = await authFetch(`${API_BASE}/api/gudang/stok`, {
+        method: 'POST',
+        body: JSON.stringify({
+          idDapur: sessionDapur.id,
+          items: [{
             namaBarang: namaNormal,
-            qty: qtyNum,
+            qty: totalQty,
             satuan: newStockSatuan,
-            hargaSatuan: priceUnit
-          }];
-        }
+            hargaSatuan: Math.round(avgPrice),
+            fotoNota: newStockFoto // sertakan lampiran foto nota jika ada
+          }]
+        })
       });
+      if (!dbStokRes.ok) throw new Error('Gagal memperbarui stok di database server');
+
+      await fetchStock(); // Refresh list stok dari server
 
       setNewStockNama('');
       setNewStockQty('');
@@ -541,9 +576,8 @@ function App() {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/koperasi/order`, {
+      const res = await authFetch(`${API_BASE}/api/koperasi/order`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idDapur: sessionDapur.id,
           namaDapur: sessionDapur.nama,
@@ -568,44 +602,53 @@ function App() {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/koperasi/order/${order.id}/status`, {
+      const res = await authFetch(`${API_BASE}/api/koperasi/order/${order.id}/status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'SELESAI' })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'Gagal konfirmasi penerimaan.');
 
-      setStock((prev) => {
-        const updated = [...prev];
-        order.items.forEach((orderedItem) => {
-          const existingIdx = updated.findIndex(
-            (item) => item.namaBarang.toLowerCase() === orderedItem.namaBarang.toLowerCase()
-          );
-          if (existingIdx > -1) {
-            const oldItem = updated[existingIdx];
-            const totalQty = oldItem.qty + orderedItem.qty;
-            const avgPrice =
-              totalQty > 0
-                ? (oldItem.qty * oldItem.hargaSatuan + orderedItem.qty * orderedItem.hargaSatuan) / totalQty
-                : orderedItem.hargaSatuan;
+      // Hitung stok baru dengan average price
+      const updatedItems = [];
+      order.items.forEach((orderedItem) => {
+        const existingIdx = stock.findIndex(
+          (item) => item.namaBarang.toLowerCase() === orderedItem.namaBarang.toLowerCase()
+        );
+        if (existingIdx > -1) {
+          const oldItem = stock[existingIdx];
+          const totalQty = oldItem.qty + orderedItem.qty;
+          const avgPrice = totalQty > 0
+            ? (oldItem.qty * oldItem.hargaSatuan + orderedItem.qty * orderedItem.hargaSatuan) / totalQty
+            : orderedItem.hargaSatuan;
 
-            updated[existingIdx] = {
-              ...oldItem,
-              qty: totalQty,
-              hargaSatuan: Math.round(avgPrice),
-            };
-          } else {
-            updated.push({
-              namaBarang: orderedItem.namaBarang,
-              qty: orderedItem.qty,
-              satuan: orderedItem.satuan,
-              hargaSatuan: orderedItem.hargaSatuan,
-            });
-          }
-        });
-        return updated;
+          updatedItems.push({
+            namaBarang: oldItem.namaBarang,
+            qty: totalQty,
+            satuan: orderedItem.satuan || oldItem.satuan,
+            hargaSatuan: Math.round(avgPrice)
+          });
+        } else {
+          updatedItems.push({
+            namaBarang: orderedItem.namaBarang,
+            qty: orderedItem.qty,
+            satuan: orderedItem.satuan,
+            hargaSatuan: orderedItem.hargaSatuan
+          });
+        }
       });
+
+      // Simpan perubahan stok ke database server (/api/gudang/stok)
+      const dbStokRes = await authFetch(`${API_BASE}/api/gudang/stok`, {
+        method: 'POST',
+        body: JSON.stringify({
+          idDapur: sessionDapur.id,
+          items: updatedItems
+        })
+      });
+      if (!dbStokRes.ok) throw new Error('Gagal memperbarui stok di database server');
+
+      await fetchStock(); // Muat ulang stok dari server
 
       alert('Barang berhasil diterima dan langsung dimasukkan ke Stok Gudang Dapur!');
       fetchShippedOrders();
@@ -735,9 +778,8 @@ function App() {
         })),
       };
 
-      const response = await fetch(`${API_BASE}/api/laporan`, {
+      const response = await authFetch(`${API_BASE}/api/laporan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await response.json();
@@ -773,12 +815,8 @@ function App() {
       }
 
       setLastSubmit(data.data);
-      setStock((previous) => previous.map((stockItem) => {
-        const used = audit.rows.find(
-          (row) => row.sumber === 'AMBIL_GUDANG' && row.namaBarang === stockItem.namaBarang,
-        );
-        return used ? { ...stockItem, qty: Math.max(0, stockItem.qty - used.qtyRiil) } : stockItem;
-      }));
+      // Ambil data stok terbaru dari server (stok sudah berkurang otomatis di backend)
+      await fetchStock();
       alert('Laporan berhasil dikirim dan diaudit backend.');
       setCurrentPage('review');
     } catch (error) {
@@ -911,7 +949,13 @@ function App() {
               <p className="text-[10px] text-emerald-100 mt-1">{syncStatus}</p>
             </div>
             <button
-              onClick={() => setIsLoggedIn(false)}
+              onClick={() => {
+                sessionStorage.removeItem('sppg_token');
+                sessionStorage.removeItem('sppg_session_dapur');
+                setToken('');
+                setIsLoggedIn(false);
+                setSessionDapur(demoSession);
+              }}
               className="bg-emerald-950/40 rounded-lg px-3 py-2 text-[10px] font-bold"
             >
               Keluar
