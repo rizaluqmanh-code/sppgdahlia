@@ -85,6 +85,101 @@ function App() {
   const [syncStatus, setSyncStatus] = useState('');
   const [backendStatus, setBackendStatus] = useState('Mengecek koneksi backend...');
 
+  // State untuk laporan offline yang tertunda
+  const [pendingReports, setPendingReports] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('sppg_pending_reports') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  // Fungsi sinkronisasi laporan offline
+  const syncPendingReports = async () => {
+    const saved = JSON.parse(localStorage.getItem('sppg_pending_reports') || '[]');
+    if (saved.length === 0) return;
+
+    setIsLoading(true);
+    setSyncStatus('Menghubungkan jaringan & sinkronisasi data...');
+    
+    let successCount = 0;
+    const remaining = [];
+
+    for (const payload of saved) {
+      try {
+        const response = await authFetch(`${API_BASE}/api/laporan`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          successCount++;
+          
+          // Google Sheets sync
+          const postUrl = CENTRAL_SPREADSHEET_URL || (sessionDapur.urlApi ? sessionDapur.urlApi.split('?')[0] : '');
+          if (postUrl) {
+            try {
+              const promises = payload.items.map((row) => {
+                const rowPayload = {
+                  idDapur: payload.idDapur || 'dapur01',
+                  jenisInput: `REALISASI_OFFLINE`,
+                  tanggalInput: payload.tanggalInput || new Date().toISOString().split('T')[0],
+                  namaBarang: row.namaBarang,
+                  qty: row.qty,
+                  satuan: row.satuan,
+                  harga: row.totalRiil / (row.qty || 1),
+                  status: 'Realisasi',
+                  linkNota: row.fotoNota ? 'Ada Foto' : '-'
+                };
+                return fetch(postUrl, {
+                  method: 'POST',
+                  mode: 'no-cors',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(rowPayload),
+                });
+              });
+              await Promise.all(promises);
+            } catch (err) {
+              console.warn('Gagal sinkron Sheets offline:', err);
+            }
+          }
+        } else {
+          remaining.push(payload);
+        }
+      } catch (err) {
+        remaining.push(payload);
+      }
+    }
+
+    localStorage.setItem('sppg_pending_reports', JSON.stringify(remaining));
+    setPendingReports(remaining);
+    setIsLoading(false);
+
+    if (successCount > 0) {
+      alert(`Berhasil! ${successCount} laporan belanja offline berhasil disinkronisasikan ke database server.`);
+      fetchStock();
+    }
+  };
+
+  // Monitor jaringan online/offline
+  useEffect(() => {
+    const handleOnline = () => {
+      setBackendStatus('Terhubung ke Internet.');
+      syncPendingReports();
+    };
+    const handleOffline = () => {
+      setBackendStatus('Anda sedang Offline.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [token, sessionDapur.id]);
+
   // Helper fetch dengan Authorization Header JWT Token
   const authFetch = async (url, options = {}) => {
     const savedToken = sessionStorage.getItem('sppg_token') || token;
@@ -758,25 +853,30 @@ function App() {
     }
 
     setIsLoading(true);
+    const payload = {
+      idDapur: sessionDapur.id,
+      namaDapur: sessionDapur.nama,
+      tanggalInput: new Date().toISOString().split('T')[0],
+      targetPorsi: activeRabData.targetPorsi,
+      batasAnggaran: activeRabData.batasAnggaran,
+      fotoMasakan,
+      items: audit.rows.map((row) => ({
+        id: row.id,
+        namaBarang: row.namaBarang,
+        qty: row.qtyRiil,
+        satuan: row.satuan,
+        hargaRab: row.hargaRab,
+        totalRab: row.totalRab,
+        totalRiil: row.totalRiil,
+        sumber: row.sumber,
+        fotoNota: row.fotoNota,
+      })),
+    };
+
     try {
-      const payload = {
-        idDapur: sessionDapur.id,
-        namaDapur: sessionDapur.nama,
-        targetPorsi: activeRabData.targetPorsi,
-        batasAnggaran: activeRabData.batasAnggaran,
-        fotoMasakan,
-        items: audit.rows.map((row) => ({
-          id: row.id,
-          namaBarang: row.namaBarang,
-          qty: row.qtyRiil,
-          satuan: row.satuan,
-          hargaRab: row.hargaRab,
-          totalRab: row.totalRab,
-          totalRiil: row.totalRiil,
-          sumber: row.sumber,
-          fotoNota: row.fotoNota,
-        })),
-      };
+      if (!navigator.onLine) {
+        throw new Error('OFFLINE_MODE');
+      }
 
       const response = await authFetch(`${API_BASE}/api/laporan`, {
         method: 'POST',
@@ -820,7 +920,15 @@ function App() {
       alert('Laporan berhasil dikirim dan diaudit backend.');
       setCurrentPage('review');
     } catch (error) {
-      alert(`Gagal kirim laporan: ${error.message}`);
+      if (error.message === 'OFFLINE_MODE' || error.name === 'TypeError' || error.message.includes('fetch')) {
+        const updated = [...pendingReports, payload];
+        localStorage.setItem('sppg_pending_reports', JSON.stringify(updated));
+        setPendingReports(updated);
+        alert('Anda sedang offline atau koneksi ke server Express terputus. Laporan Anda telah disimpan dengan aman di memori HP dan akan otomatis dikirimkan ke server ketika internet aktif kembali.');
+        setCurrentPage('beranda');
+      } else {
+        alert(`Gagal kirim laporan: ${error.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -963,6 +1071,18 @@ function App() {
           </div>
         </header>
 
+        {pendingReports.length > 0 && (
+          <div className="bg-amber-500 text-slate-950 px-4 py-2.5 text-[10px] font-black tracking-wide flex items-center justify-between shadow-sm shrink-0">
+            <span className="flex items-center gap-1.5">⚠️ {pendingReports.length} Laporan Tertunda (Offline)</span>
+            <button 
+              onClick={syncPendingReports} 
+              className="bg-slate-900 text-white rounded-lg px-2.5 py-1.5 font-bold text-[9px] hover:bg-slate-800 transition-colors uppercase active:scale-95 duration-100"
+            >
+              Sync Sekarang
+            </button>
+          </div>
+        )}
+
         <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex gap-1.5 overflow-x-auto shrink-0 scrollbar-none">
           {['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT'].map((day) => {
             const dayItems = bomList.filter(i => (i.hariMasak || '').toUpperCase() === day);
@@ -988,6 +1108,21 @@ function App() {
         <main className="flex-1 overflow-y-auto pb-24">
           {currentPage === 'beranda' && (
             <section className="p-4 space-y-4">
+              {deferredPrompt && (
+                <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-2xl p-4 shadow-md flex items-center justify-between border border-emerald-500/20">
+                  <div className="space-y-1 max-w-[70%]">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-emerald-100">Pasang Aplikasi</h3>
+                    <p className="text-[11px] font-bold text-white">Instal aplikasi di layar utama HP untuk penggunaan offline lebih cepat!</p>
+                  </div>
+                  <button 
+                    onClick={handleInstallPWA} 
+                    className="bg-white text-emerald-800 rounded-xl px-3 py-2 text-[10px] font-black shadow-lg shadow-emerald-950/20 active:scale-95 transition-transform"
+                  >
+                    Pasang Sekarang
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <MetricCard label="Target PM" value={`${Number(activeRabData.targetPorsi).toLocaleString('id-ID')} Anak`} />
                 <MetricCard label="Batas RAB" value={formatRp(activeRabData.batasAnggaran)} tone="amber" />
