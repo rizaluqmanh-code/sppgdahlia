@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || globalThis.location?.origin || 'http://localhost:4500';
+const API_BASE = import.meta.env.VITE_API_BASE 
+  || (globalThis.location?.origin?.includes(':5173') ? 'http://localhost:4500' : globalThis.location?.origin) 
+  || 'http://localhost:4500';
 const URL_AUTH_YAYASAN = import.meta.env.VITE_AUTH_YAYASAN || '';
 
 const CENTRAL_SPREADSHEET_URL = import.meta.env.VITE_SPREADSHEET_CENTRAL_URL || '';
@@ -788,30 +790,38 @@ function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden selection:bg-emerald-500 selection:text-slate-950">
+        {/* Background Radial Glow Effects */}
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-teal-500/10 blur-[120px] pointer-events-none"></div>
+        
+        <div className="w-full max-w-sm z-10 animate-fade-in">
           {/* Logo / Brand */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 mb-4">
-              <span className="text-3xl">🍽️</span>
+            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-inner shadow-emerald-500/10 mb-4">
+              <span className="text-3xl filter drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">🍽️</span>
             </div>
-            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-emerald-400">SPPG Control Suite</p>
-            <h1 className="text-2xl font-black text-white mt-1">Portal PIC Dapur</h1>
-            <p className="text-xs text-slate-500 mt-2">Masuk menggunakan akun yang diberikan koordinator.</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.2)]">
+              SPPG Control Suite
+            </p>
+            <h1 className="text-2xl font-black text-white mt-1.5 tracking-tight">Portal PIC Dapur</h1>
+            <p className="text-xs text-slate-400 mt-2">Masuk menggunakan akun yang diberikan koordinator.</p>
           </div>
 
-          {/* Card login */}
-          <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6 shadow-2xl">
+          {/* Glassmorphism Card */}
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/5 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.4)] relative">
+            <div className="absolute inset-0 rounded-3xl border border-emerald-500/10 pointer-events-none"></div>
+            
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 ml-1">
                   Username Dapur
                 </label>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setLoginError(''); }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-slate-700"
                   placeholder="contoh: dapur01"
                   autoComplete="username"
                   autoCapitalize="none"
@@ -819,14 +829,14 @@ function App() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 ml-1">
                   Password
                 </label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setLoginError(''); }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-600"
+                  className="w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-slate-700"
                   placeholder="••••••••"
                   autoComplete="current-password"
                 />
@@ -834,20 +844,20 @@ function App() {
 
               {/* Error message */}
               {loginError && (
-                <div className="bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3 flex items-start gap-2">
-                  <span className="text-red-400 mt-0.5">⚠️</span>
-                  <p className="text-[11px] text-red-400 font-bold">{loginError}</p>
+                <div className="bg-rose-950/30 border border-rose-900/30 rounded-xl px-4 py-3 flex items-start gap-2 animate-pulse">
+                  <span className="text-rose-400 mt-0.5 text-xs">⚠️</span>
+                  <p className="text-[11px] text-rose-400 font-semibold">{loginError}</p>
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl py-3.5 text-sm font-black uppercase tracking-widest text-white transition-all mt-2"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl py-3.5 text-xs font-bold uppercase tracking-widest text-white transition-all duration-250 shadow-lg shadow-emerald-950/20 hover:shadow-emerald-500/20 mt-2"
               >
                 {isLoading ? (
                   <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                     </svg>
@@ -858,13 +868,13 @@ function App() {
             </form>
 
             {/* Status backend */}
-            <div className="mt-5 pt-4 border-t border-slate-800 flex items-center gap-2">
+            <div className="mt-5 pt-4 border-t border-white/5 flex items-center gap-2">
               <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
-                backendStatus.includes('aktif') || backendStatus.includes('Backend') && !backendStatus.includes('belum')
-                  ? 'bg-emerald-500 animate-pulse'
+                backendStatus.includes('aktif') || (backendStatus.includes('Backend') && !backendStatus.includes('belum'))
+                  ? 'bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse'
                   : 'bg-slate-600'
               }`} />
-              <p className="text-[10px] text-slate-500 truncate">{backendStatus}</p>
+              <p className="text-[10px] text-slate-500 truncate font-medium">{backendStatus}</p>
             </div>
           </div>
 
@@ -873,7 +883,7 @@ function App() {
             <div className="mt-4">
               <button
                 onClick={handleInstallPWA}
-                className="w-full bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-800 rounded-2xl py-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                className="w-full bg-slate-900/40 backdrop-blur-md hover:bg-slate-900/60 text-emerald-400 border border-white/5 rounded-2xl py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200"
               >
                 <span>📥</span> Instal Aplikasi di HP
               </button>
