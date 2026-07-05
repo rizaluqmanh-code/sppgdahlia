@@ -116,8 +116,18 @@
       </div>
     </section>
 
-    <!-- Detailed Section Grid -->
-    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Tab Navigation -->
+    <div class="flex border-b border-slate-900 gap-6 text-xs font-bold mb-1">
+      <button id="tabAuditBtn" onclick="switchTab('audit')" class="pb-3 border-b-2 border-emerald-500 text-emerald-400 focus:outline-none transition-all duration-200">
+        Histori & Audit Lokal
+      </button>
+      <button id="tabKledoBtn" onclick="switchTab('kledo')" class="pb-3 border-b-2 border-transparent text-slate-400 hover:text-white focus:outline-none transition-all duration-200">
+        Pembukuan & Laporan Keuangan Kledo
+      </button>
+    </div>
+
+    <!-- Detailed Section Grid (Audit Lokal) -->
+    <section id="viewAudit" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Laporan Table -->
       <div class="lg:col-span-2 glass rounded-2xl shadow-xl overflow-hidden flex flex-col">
         <div class="px-5 py-4 border-b border-slate-900 flex items-center justify-between">
@@ -157,6 +167,56 @@
         </div>
       </aside>
     </section>
+
+    <!-- Kledo Reconciliation Section -->
+    <section id="viewKledo" class="hidden glass rounded-2xl shadow-xl overflow-hidden flex flex-col p-6 space-y-6">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-slate-900 pb-4">
+        <div>
+          <h2 class="text-sm font-black text-white">Rekonsiliasi Pembukuan Keuangan Kledo</h2>
+          <p class="text-[11px] text-slate-400 mt-0.5">Membandingkan realisasi belanja dapur lokal dengan data pengeluaran riil di Kledo.</p>
+        </div>
+        <div class="flex items-center gap-4 text-[10px] font-bold text-slate-400">
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500"></span> Sinkron</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amber-500"></span> Deviasi</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span> Belum Sync</span>
+        </div>
+      </div>
+
+      <!-- Kledo KPI Agregat -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-slate-900/40 border border-slate-900/60 rounded-xl p-4">
+          <p class="text-[9px] font-black uppercase text-slate-400 tracking-wider">Total Belanja Dapur (Lokal)</p>
+          <p id="kledoLocalTotalAll" class="text-lg font-black text-white mt-1">Rp 0</p>
+        </div>
+        <div class="bg-slate-900/40 border border-slate-900/60 rounded-xl p-4">
+          <p class="text-[9px] font-black uppercase text-slate-400 tracking-wider">Total Beban Makanan (Kledo)</p>
+          <p id="kledoTotalAll" class="text-lg font-black text-white mt-1">Rp 0</p>
+        </div>
+        <div class="bg-slate-900/40 border border-slate-900/60 rounded-xl p-4">
+          <p class="text-[9px] font-black uppercase text-slate-400 tracking-wider">Status Selisih Global</p>
+          <p id="kledoDiffAll" class="text-lg font-black text-emerald-400 mt-1">Rp 0</p>
+        </div>
+      </div>
+
+      <!-- Kledo Reconciliation Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-900/60 text-slate-300 border-b border-slate-900">
+            <tr>
+              <th class="p-4 font-black">Dapur (Tags Kledo)</th>
+              <th class="p-4 text-right font-black">Belanja Lokal (DB)</th>
+              <th class="p-4 text-right font-black">Kledo Expenses</th>
+              <th class="p-4 text-right font-black">Selisih</th>
+              <th class="p-4 text-center font-black">Status</th>
+              <th class="p-4 text-center font-black">Aksi / Rincian</th>
+            </tr>
+          </thead>
+          <tbody id="kledoBody" class="divide-y divide-slate-900">
+            <!-- Rendered by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <!-- Lightbox Modal -->
@@ -171,6 +231,66 @@
       </div>
       <img id="lightboxImg" class="max-h-[75vh] max-w-full rounded-2xl shadow-2xl border border-slate-800 object-contain" src="" alt="Bukti Foto">
       <p id="lightboxCaption" class="text-xs text-slate-400 font-bold mt-4 bg-slate-900 px-4 py-2.5 rounded-xl border border-slate-800 text-center max-w-lg"></p>
+    </div>
+  </div>
+
+  <!-- Kledo Detail Modal -->
+  <div id="kledoModal" class="fixed inset-0 z-50 hidden bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass max-w-4xl w-full rounded-2xl border border-slate-900 flex flex-col max-h-[85vh] overflow-hidden">
+      <div class="p-5 border-b border-slate-900 flex items-center justify-between">
+        <div>
+          <h2 id="kledoModalTitle" class="text-base font-black text-white">Detail Pengeluaran Kledo</h2>
+          <p id="kledoModalSubtitle" class="text-[11px] text-slate-400 mt-0.5 font-bold">Daftar transaksi dan sinkronisasi laporan harian.</p>
+        </div>
+        <button onclick="closeKledoModal()" class="bg-slate-900/80 text-slate-400 hover:text-white rounded-full p-2 border border-slate-800 focus:outline-none transition-colors">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-6 overflow-y-auto space-y-6 flex-1">
+        <!-- Laporan Lokal & Sync Status -->
+        <div class="space-y-3">
+          <h3 class="text-[10px] font-black text-emerald-400 uppercase tracking-wider">1. Sinkronisasi Laporan Harian (Lokal vs Kledo)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-slate-900/60 text-slate-300 border-b border-slate-900">
+                <tr>
+                  <th class="p-3 font-black">ID Laporan</th>
+                  <th class="p-3 font-black">Tanggal</th>
+                  <th class="p-3 text-right font-black">Total Belanja</th>
+                  <th class="p-3 text-center font-black">Status Sync</th>
+                  <th class="p-3 text-center font-black">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="kledoModalLaporanBody" class="divide-y divide-slate-900">
+                <!-- JS will populate -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Transaksi Kledo Resmi -->
+        <div class="space-y-3">
+          <h3 class="text-[10px] font-black text-emerald-400 uppercase tracking-wider">2. Voucher Pengeluaran Resmi di Kledo</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-slate-900/60 text-slate-300 border-b border-slate-900">
+                <tr>
+                  <th class="p-3 font-black">Nomor Referensi</th>
+                  <th class="p-3 font-black">Tanggal Transaksi</th>
+                  <th class="p-3 text-right font-black">Jumlah Nominal</th>
+                  <th class="p-3 font-black">Keterangan / Memo</th>
+                </tr>
+              </thead>
+              <tbody id="kledoModalExpensesBody" class="divide-y divide-slate-900">
+                <!-- JS will populate -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -503,13 +623,219 @@
 
     // Close on escape press
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'Escape') {
+        closeLightbox();
+        closeKledoModal();
+      }
     });
 
     // Close on overlay click
     document.getElementById('lightbox').addEventListener('click', (e) => {
       if (e.target.id === 'lightbox') closeLightbox();
     });
+
+    document.getElementById('kledoModal').addEventListener('click', (e) => {
+      if (e.target.id === 'kledoModal') closeKledoModal();
+    });
+
+    // =========================================================================
+    // KLEDO INTEGRATION FRONTEND JS
+    // =========================================================================
+    let currentTab = 'audit';
+    let globalKledoData = null;
+
+    function switchTab(tab) {
+      currentTab = tab;
+      const auditBtn = document.getElementById('tabAuditBtn');
+      const kledoBtn = document.getElementById('tabKledoBtn');
+      const viewAudit = document.getElementById('viewAudit');
+      const viewKledo = document.getElementById('viewKledo');
+
+      if (tab === 'audit') {
+        auditBtn.className = "pb-3 border-b-2 border-emerald-500 text-emerald-400 focus:outline-none transition-all duration-200";
+        kledoBtn.className = "pb-3 border-b-2 border-transparent text-slate-400 hover:text-white focus:outline-none transition-all duration-200";
+        viewAudit.classList.remove('hidden');
+        viewKledo.classList.add('hidden');
+      } else {
+        kledoBtn.className = "pb-3 border-b-2 border-emerald-500 text-emerald-400 focus:outline-none transition-all duration-200";
+        auditBtn.className = "pb-3 border-b-2 border-transparent text-slate-400 hover:text-white focus:outline-none transition-all duration-200";
+        viewAudit.classList.add('hidden');
+        viewKledo.classList.remove('hidden');
+        loadKledoDashboard();
+      }
+    }
+
+    async function loadKledoDashboard() {
+      const kledoBody = document.getElementById('kledoBody');
+      kledoBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="p-12 text-center text-slate-500">
+            <span class="text-xs font-bold text-amber-500 animate-pulse">Menghubungi API Kledo dan Mengambil Transaksi...</span>
+          </td>
+        </tr>`;
+
+      try {
+        const res = await fetch('/api/kledo/dashboard');
+        const json = await res.json();
+        if (!json.success) throw new Error(json.message || 'Gagal memuat data Kledo');
+
+        globalKledoData = json.data;
+
+        // Render aggregate stats
+        document.getElementById('kledoLocalTotalAll').textContent = formatRp(globalKledoData.totalRealisasiLokalAll);
+        document.getElementById('kledoTotalAll').textContent = formatRp(globalKledoData.totalExpensesKledoAll);
+        
+        const diff = globalKledoData.totalExpensesKledoAll - globalKledoData.totalRealisasiLokalAll;
+        const diffEl = document.getElementById('kledoDiffAll');
+        if (Math.abs(diff) < 10) {
+          diffEl.textContent = 'Rp 0 (Sinkron)';
+          diffEl.className = 'text-lg font-black text-emerald-400 mt-1';
+        } else {
+          diffEl.textContent = `${diff > 0 ? '+' : ''}${formatRp(diff)}`;
+          diffEl.className = 'text-lg font-black text-rose-500 mt-1';
+        }
+
+        renderKledoTable();
+      } catch (err) {
+        kledoBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="p-12 text-center text-slate-500">
+              <div class="max-w-md mx-auto space-y-2">
+                <p class="text-sm font-black text-slate-400">Gagal memuat data Kledo</p>
+                <p class="text-xs text-rose-500 font-bold">${err.message}</p>
+                <p class="text-xs text-slate-500">Periksa file .env untuk memastikan kredensial token Kledo diisi dengan benar.</p>
+              </div>
+            </td>
+          </tr>`;
+      }
+    }
+
+    function renderKledoTable() {
+      const body = document.getElementById('kledoBody');
+      if (!globalKledoData || !globalKledoData.dapurKledoStats) return;
+
+      body.innerHTML = globalKledoData.dapurKledoStats.map(d => {
+        let statusBadge = '';
+        if (d.statusSync === 'SINKRON') {
+          statusBadge = '<span class="bg-emerald-950/50 text-emerald-400 border border-emerald-900/30 text-[9px] font-black px-2.5 py-1 rounded-lg border">SINKRON</span>';
+        } else if (d.statusSync === 'DEVIASE') {
+          statusBadge = '<span class="bg-amber-950/50 text-amber-400 border border-amber-900/30 text-[9px] font-black px-2.5 py-1 rounded-lg border">DEVIASE</span>';
+        } else if (d.statusSync === 'BELUM_SYNC') {
+          statusBadge = '<span class="bg-rose-950/50 text-rose-400 border border-rose-900/30 text-[9px] font-black px-2.5 py-1 rounded-lg border animate-pulse">BELUM SYNC</span>';
+        } else {
+          statusBadge = '<span class="bg-slate-900 text-slate-500 border border-slate-800 text-[9px] font-black px-2.5 py-1 rounded-lg border">NORMAL</span>';
+        }
+
+        const diffText = d.selisih !== 0 
+          ? `<span class="${d.selisih > 0 ? 'text-rose-400 font-black' : 'text-emerald-400 font-black'} font-mono">${d.selisih > 0 ? '+' : ''}${formatRp(d.selisih)}</span>`
+          : '<span class="text-slate-500">Rp 0</span>';
+
+        return `
+          <tr class="hover:bg-slate-900/30 transition-colors group">
+            <td class="p-4 border-b border-slate-900">
+              <p class="font-black text-white group-hover:text-emerald-400 transition-colors text-xs">${d.namaDapur}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5 font-bold">${d.wilayah} | Kledo Tag ID: ${d.kledoTagId || 'Belum Terdaftar'}</p>
+            </td>
+            <td class="p-4 text-right font-mono border-b border-slate-900 font-bold text-slate-300 text-xs">
+              ${formatRp(d.totalRealisasiLokal)}
+            </td>
+            <td class="p-4 text-right font-mono border-b border-slate-900 font-bold text-slate-300 text-xs">
+              ${formatRp(d.totalExpensesKledo)}
+            </td>
+            <td class="p-4 text-right font-mono border-b border-slate-900 text-xs">
+              ${diffText}
+            </td>
+            <td class="p-4 text-center border-b border-slate-900">
+              ${statusBadge}
+            </td>
+            <td class="p-4 text-center border-b border-slate-900">
+              <button onclick="openKledoModal('${d.idDapur}')" class="bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-900/30 text-[10px] font-black px-3 py-1.5 rounded-lg transition-colors">
+                Rincian & Sync
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openKledoModal(idDapur) {
+      if (!globalKledoData) return;
+      const d = globalKledoData.dapurKledoStats.find(item => item.idDapur === idDapur);
+      if (!d) return;
+
+      document.getElementById('kledoModalTitle').textContent = `Rekonsiliasi: ${d.namaDapur}`;
+      document.getElementById('kledoModalSubtitle').textContent = `${d.wilayah} | Total Lokal: ${formatRp(d.totalRealisasiLokal)} | Total Kledo: ${formatRp(d.totalExpensesKledo)}`;
+
+      // Populate local reports
+      const reportsBody = document.getElementById('kledoModalLaporanBody');
+      if (d.laporanList.length === 0) {
+        reportsBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">Tidak ada laporan lokal.</td></tr>';
+      } else {
+        reportsBody.innerHTML = d.laporanList.map(rep => {
+          return `
+            <tr class="hover:bg-slate-900/10">
+              <td class="p-3 font-bold text-white">${rep.id}</td>
+              <td class="p-3 text-slate-400 font-bold">${rep.tanggalInput}</td>
+              <td class="p-3 text-right font-mono font-bold text-slate-300">${formatRp(rep.totalRiil)}</td>
+              <td class="p-3 text-center">
+                ${rep.hasKledoSync 
+                  ? '<span class="text-emerald-400 font-black bg-emerald-950/30 border border-emerald-900/30 px-2.5 py-1 rounded-lg text-[9px]">TERKIRIM</span>' 
+                  : '<span class="text-rose-400 font-black bg-rose-950/30 border border-rose-900/30 px-2.5 py-1 rounded-lg text-[9px] animate-pulse">BELUM SYNC</span>'}
+              </td>
+              <td class="p-3 text-center">
+                <button onclick="syncLaporanManual('${rep.id}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black px-2.5 py-1.5 rounded-lg transition-colors">
+                  Sync Sekarang
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Populate Kledo vouchers
+      const expensesBody = document.getElementById('kledoModalExpensesBody');
+      if (d.expensesList.length === 0) {
+        expensesBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">Belum ada transaksi tercatat di Kledo.</td></tr>';
+      } else {
+        expensesBody.innerHTML = d.expensesList.map(exp => {
+          return `
+            <tr class="hover:bg-slate-900/10">
+              <td class="p-3 font-bold text-white font-mono">${exp.refNumber}</td>
+              <td class="p-3 text-slate-400 font-bold">${exp.transDate}</td>
+              <td class="p-3 text-right font-mono font-bold text-slate-300">${formatRp(exp.amount)}</td>
+              <td class="p-3 text-slate-400 max-w-xs truncate font-bold text-[11px]" title="${exp.memo}">${exp.memo}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      document.getElementById('kledoModal').classList.remove('hidden');
+    }
+
+    function closeKledoModal() {
+      document.getElementById('kledoModal').classList.add('hidden');
+    }
+
+    async function syncLaporanManual(laporanId) {
+      const btn = event.target;
+      const originalText = btn.textContent;
+      btn.textContent = 'Syncing...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/kledo/sync-laporan/${laporanId}`, { method: 'POST' });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.message || 'Gagal sinkronisasi');
+
+        alert(`Laporan ${laporanId} berhasil disinkronisasikan ke Kledo!`);
+        closeKledoModal();
+        loadKledoDashboard(); // Reload data dashboard
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
 
     // Initial Load
     loadDashboard();

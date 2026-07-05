@@ -598,7 +598,6 @@ app.post('/api/laporan', authenticateToken, async (req, res) => {
 });
 
 // Helper integrasi API Kledo
-// Helper integrasi API Kledo
 async function syncToKledo(laporan) {
   const kledoUrl = process.env.KLEDO_API_URL;
   const kledoToken = process.env.KLEDO_API_TOKEN;
@@ -606,7 +605,7 @@ async function syncToKledo(laporan) {
 
   if (!kledoUrl || !kledoToken || !kledoAccountId) {
     console.log('ℹ️ [Kledo Sync] Dilewati. Lengkapi KLEDO_API_URL, TOKEN, dan ACCOUNT_ID di file .env untuk mengaktifkan.');
-    return;
+    return { success: false, reason: 'Config missing' };
   }
 
   const namaDapurTag = laporan.namaDapur || 'Dapur SPPG';
@@ -674,6 +673,8 @@ async function syncToKledo(laporan) {
     // Sertakan attachment jika ada foto nota/masakan
     const attachmentUrl = laporan.items.find(item => item.fotoNota)?.fotoNota || laporan.fotoMasakan || null;
     if (attachmentUrl) {
+      // Jika attachment berupa path relatif, arahkan ke URL absolut VPS jika didefinisikan (opsional)
+      // Di sini kita kirim saja sebagai referensi teks/string
       payload.attachment = attachmentUrl;
     }
 
@@ -703,17 +704,20 @@ async function syncToKledo(laporan) {
       result = await retryRes.json();
       if (retryRes.ok && result.success) {
         console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo (tanpa attachment) dengan ID: ${result.data?.id}`);
-        return;
+        return { success: true, id: result.data?.id, note: 'No attachment fallback used' };
       }
     }
 
     if (response.ok && result.success) {
       console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo dengan ID: ${result.data?.id} (Tag: ${namaDapurTag})`);
+      return { success: true, id: result.data?.id };
     } else {
       console.warn(`⚠️ [Kledo Sync] Kledo menolak data: ${result.message || response.statusText}`);
+      throw new Error(result.message || response.statusText);
     }
   } catch (error) {
     console.error('❌ [Kledo Sync] Gagal menghubungi server Kledo:', error.message);
+    throw error;
   }
 }
 
@@ -738,6 +742,193 @@ app.get('/api/dashboard', async (_req, res) => {
       laporan: reports,
     },
   });
+});
+
+// =========================================================================
+// KLEDO AUDIT & DASHBOARD APIS
+// =========================================================================
+app.get('/api/kledo/dashboard', async (req, res) => {
+  const kledoUrl = process.env.KLEDO_API_URL;
+  const kledoToken = process.env.KLEDO_API_TOKEN;
+
+  if (!kledoUrl || !kledoToken) {
+    return res.status(503).json({
+      success: false,
+      message: 'Integrasi Kledo belum dikonfigurasi di file .env server.'
+    });
+  }
+
+  try {
+    // 1. Ambil data tag dari Kledo
+    const tagsRes = await fetch(`${kledoUrl}/finance/tags?per_page=1000`, {
+      headers: { 'Authorization': kledoToken }
+    });
+    if (!tagsRes.ok) throw new Error(`Gagal memuat tags: ${tagsRes.statusText}`);
+    const tagsJson = await tagsRes.json();
+    const tagsData = tagsJson.data?.data || [];
+
+    // 2. Ambil pengeluaran dari Kledo
+    const expensesRes = await fetch(`${kledoUrl}/finance/expenses?per_page=1000`, {
+      headers: { 'Authorization': kledoToken }
+    });
+    if (!expensesRes.ok) throw new Error(`Gagal memuat expenses: ${expensesRes.statusText}`);
+    const expensesJson = await expensesRes.json();
+    const expensesData = expensesJson.data?.data || [];
+
+    // 3. Ambil laporan belanja lokal
+    const localReports = await filterLaporanByDapur('ALL');
+    
+    // Kelompokkan total pengeluaran riil lokal per idDapur
+    const localDapurTotals = {};
+    localReports.forEach(r => {
+      const id = r.idDapur;
+      if (!localDapurTotals[id]) {
+        localDapurTotals[id] = { totalRiil: 0, reports: [] };
+      }
+      localDapurTotals[id].totalRiil += Number(r.totalRiil);
+      localDapurTotals[id].reports.push({
+        id: r.id,
+        tanggalInput: r.tanggalInput,
+        totalRiil: Number(r.totalRiil),
+        hasKledoSync: false
+      });
+    });
+
+    // Petakan dapur dengan tag Kledo
+    const resultDapurList = dapurStore.map(d => {
+      const tag = tagsData.find(t => t.name.toLowerCase().trim() === d.nama.toLowerCase().trim());
+      const tagId = tag ? tag.id : null;
+
+      // Filter transaksi pengeluaran Kledo untuk dapur ini
+      const dapurExpenses = expensesData.filter(exp => 
+        exp.tags && exp.tags.some(t => t.id === tagId || t.name.toLowerCase().trim() === d.nama.toLowerCase().trim())
+      );
+
+      const totalKledo = dapurExpenses.reduce((sum, e) => sum + (e.amount_after_tax || e.amount || 0), 0);
+      const localData = localDapurTotals[d.id] || { totalRiil: 0, reports: [] };
+
+      // Cari status sync untuk masing-masing laporan
+      const reportsMapped = localData.reports.map(rep => {
+        const isSynced = expensesData.some(exp => 
+          exp.memo && exp.memo.includes(rep.id)
+        );
+        rep.hasKledoSync = isSynced;
+        return rep;
+      });
+
+      let statusSync = 'NORMAL';
+      if (localData.totalRiil > 0 && totalKledo === 0) {
+        statusSync = 'BELUM_SYNC';
+      } else if (localData.totalRiil > 0 && Math.abs(totalKledo - localData.totalRiil) > 10) {
+        statusSync = 'DEVIASE';
+      } else if (localData.totalRiil > 0) {
+        statusSync = 'SINKRON';
+      }
+
+      return {
+        idDapur: d.id,
+        namaDapur: d.nama,
+        wilayah: d.wilayah,
+        kledoTagId: tagId,
+        totalRealisasiLokal: localData.totalRiil,
+        totalExpensesKledo: totalKledo,
+        selisih: totalKledo - localData.totalRiil,
+        statusSync,
+        transaksiCount: dapurExpenses.length,
+        laporanList: reportsMapped,
+        expensesList: dapurExpenses.map(e => ({
+          id: e.id,
+          refNumber: e.ref_number,
+          transDate: e.trans_date,
+          amount: e.amount_after_tax || e.amount,
+          memo: e.memo
+        }))
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        dapurKledoStats: resultDapurList,
+        totalExpensesKledoAll: expensesData.reduce((sum, e) => sum + (e.amount_after_tax || e.amount || 0), 0),
+        totalRealisasiLokalAll: localReports.reduce((sum, r) => sum + Number(r.totalRiil), 0)
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Gagal memuat dashboard Kledo:', err.message);
+    res.status(500).json({ success: false, message: `Gagal memuat dashboard Kledo: ${err.message}` });
+  }
+});
+
+app.post('/api/kledo/sync-laporan/:laporanId', async (req, res) => {
+  const { laporanId } = req.params;
+  const kledoUrl = process.env.KLEDO_API_URL;
+  const kledoToken = process.env.KLEDO_API_TOKEN;
+
+  if (!kledoUrl || !kledoToken) {
+    return res.status(503).json({
+      success: false,
+      message: 'Integrasi Kledo belum dikonfigurasi di file .env server.'
+    });
+  }
+
+  try {
+    let laporan = null;
+    if (dbActive) {
+      const rowRes = await pool.query('SELECT * FROM laporan WHERE id = $1', [laporanId]);
+      if (rowRes.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Laporan tidak ditemukan di database.' });
+      }
+      const row = rowRes.rows[0];
+      const itemsRes = await pool.query('SELECT * FROM laporan_items WHERE laporan_id = $1', [laporanId]);
+      
+      laporan = {
+        id: row.id,
+        idDapur: row.id_dapur,
+        namaDapur: row.nama_dapur,
+        tanggalInput: formatDateKey(row.tanggal_input),
+        targetPorsi: row.target_porsi,
+        batasAnggaran: Number(row.batas_anggaran),
+        fotoMasakan: row.foto_masakan,
+        totalRab: Number(row.total_rab),
+        totalRiil: Number(row.total_riil),
+        hppRiil: Number(row.hpp_riil),
+        hppRab: Number(row.hpp_rab),
+        createdAt: row.created_at.toISOString(),
+        items: itemsRes.rows.map(item => ({
+          namaBarang: item.nama_barang,
+          qty: Number(item.qty),
+          satuan: item.satuan,
+          hargaRab: Number(item.harga_rab),
+          totalRab: Number(item.total_rab),
+          totalRiil: Number(item.total_riil),
+          sumber: item.sumber,
+          fotoNota: item.foto_nota,
+          catatan: item.catatan || '',
+          selisih: Number(item.selisih),
+          deviasiPersen: Number(item.deviasi_persen),
+          flagged: item.flagged
+        }))
+      };
+    } else {
+      laporan = laporanStore.find(l => l.id === laporanId);
+    }
+
+    if (!laporan) {
+      return res.status(404).json({ success: false, message: 'Laporan tidak ditemukan.' });
+    }
+
+    const syncRes = await syncToKledo(laporan);
+    res.json({
+      success: true,
+      message: 'Laporan berhasil disinkronisasikan ke Kledo.',
+      data: syncRes
+    });
+  } catch (err) {
+    console.error('❌ Gagal sinkronisasi manual ke Kledo:', err.message);
+    res.status(500).json({ success: false, message: `Gagal sinkronisasi ke Kledo: ${err.message}` });
+  }
 });
 
 // =========================================================================
