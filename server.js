@@ -612,14 +612,26 @@ async function syncToKledo(laporan) {
   try {
     const payload = {
       trans_date: laporan.tanggalInput,
-      amount: laporan.totalRiil,
-      account_id: Number(kledoAccountId),
+      due_date: laporan.tanggalInput,
+      is_paid: true,
       memo: `Belanja bahan makanan ${laporan.namaDapur} (LAP: ${laporan.id})`,
-      // Kita kirimkan file foto nota (jika ada) ke Kledo sebagai attachment
-      attachment: laporan.items.find(item => item.fotoNota)?.fotoNota || laporan.fotoMasakan || null
+      items: [
+        {
+          account_id: Number(kledoAccountId),
+          amount: laporan.totalRiil,
+          description: `Total realisasi belanja bahan makanan`
+        }
+      ]
     };
 
-    const response = await fetch(`${kledoUrl}/expenses`, {
+    // Sertakan attachment jika ada foto nota/masakan
+    const attachmentUrl = laporan.items.find(item => item.fotoNota)?.fotoNota || laporan.fotoMasakan || null;
+    if (attachmentUrl) {
+      payload.attachment = attachmentUrl;
+    }
+
+    // Gunakan subpath /finance/expenses untuk API Kledo
+    const response = await fetch(`${kledoUrl}/finance/expenses`, {
       method: 'POST',
       headers: {
         'Authorization': kledoToken,
@@ -628,7 +640,27 @@ async function syncToKledo(laporan) {
       body: JSON.stringify(payload)
     });
 
-    const result = await response.json();
+    let result = await response.json();
+    
+    // Fallback: Jika gagal karena format attachment, coba kirim ulang tanpa attachment
+    if (!response.ok && attachmentUrl) {
+      console.warn('⚠️ [Kledo Sync] Gagal kirim dengan attachment, mencoba kembali tanpa attachment...');
+      delete payload.attachment;
+      const retryRes = await fetch(`${kledoUrl}/finance/expenses`, {
+        method: 'POST',
+        headers: {
+          'Authorization': kledoToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      result = await retryRes.json();
+      if (retryRes.ok && result.success) {
+        console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo (tanpa attachment) dengan ID: ${result.data?.id}`);
+        return;
+      }
+    }
+
     if (response.ok && result.success) {
       console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo dengan ID: ${result.data?.id}`);
     } else {
