@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+const { Pool } = require('pg');
+
 let GoogleGenAI = null;
 try {
   ({ GoogleGenAI } = require('@google/genai'));
@@ -18,7 +20,130 @@ const ai = process.env.GEMINI_API_KEY && GoogleGenAI
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
   : null;
 
-const laporanStore = [];
+// Database Connection Pool
+let pool = null;
+let dbActive = false;
+
+if (process.env.DATABASE_URL) {
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    // Gunakan SSL jika terhubung ke cloud database (seperti Supabase/Neon)
+    ssl: process.env.DATABASE_URL.includes('render.com') || process.env.DATABASE_URL.includes('supabase') || process.env.DATABASE_URL.includes('neon.tech')
+      ? { rejectUnauthorized: false }
+      : false
+  });
+}
+
+// Global In-Memory Fallback Stores (Tetap digunakan jika database offline)
+let laporanStore = [];
+let orderStore = [];
+let koperasiKatalog = [
+  { id: 'KOP-01', namaBarang: 'Beras Medium', satuan: 'Kg', hargaSatuan: 14000 },
+  { id: 'KOP-02', namaBarang: 'Telur Ayam', satuan: 'Kg', hargaSatuan: 26000 },
+  { id: 'KOP-03', namaBarang: 'Minyak Goreng Sunco 2L', satuan: 'Pcs', hargaSatuan: 38000 },
+  { id: 'KOP-04', namaBarang: 'Bawang Merah Kupas', satuan: 'Kg', hargaSatuan: 45000 },
+  { id: 'KOP-05', namaBarang: 'Bawang Putih Kupas', satuan: 'Kg', hargaSatuan: 40000 },
+  { id: 'KOP-06', namaBarang: 'Garam Halus 250g', satuan: 'Bks', hargaSatuan: 2500 },
+  { id: 'KOP-07', namaBarang: 'Merica Bubuk Ladaku', satuan: 'Pcs', hargaSatuan: 1500 },
+  { id: 'KOP-08', namaBarang: 'Saos Tiram Saori', satuan: 'Botol', hargaSatuan: 12000 },
+];
+
+// Inisialisasi Skema Tabel Database saat server dijalankan
+async function initDb() {
+  if (!pool) {
+    console.log('ℹ️ DATABASE_URL tidak diatur di .env. Menggunakan mode in-memory (RAM).');
+    return;
+  }
+
+  try {
+    const client = await pool.connect();
+    console.log('✅ Berhasil terhubung ke database PostgreSQL.');
+    dbActive = true;
+
+    // Buat tabel-tabel utama
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS koperasi_katalog (
+        id VARCHAR(50) PRIMARY KEY,
+        nama_barang VARCHAR(255) NOT NULL,
+        satuan VARCHAR(50) NOT NULL,
+        harga_satuan NUMERIC NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS laporan (
+        id VARCHAR(50) PRIMARY KEY,
+        id_dapur VARCHAR(50) NOT NULL,
+        nama_dapur VARCHAR(255) NOT NULL,
+        tanggal_input DATE NOT NULL,
+        target_porsi INTEGER NOT NULL,
+        batas_anggaran NUMERIC NOT NULL,
+        foto_masakan TEXT,
+        total_rab NUMERIC NOT NULL,
+        total_riil NUMERIC NOT NULL,
+        hpp_riil NUMERIC NOT NULL,
+        hpp_rab NUMERIC NOT NULL,
+        created_at TIMESTAMP NOT NULL,
+        audit JSONB NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS laporan_items (
+        id SERIAL PRIMARY KEY,
+        laporan_id VARCHAR(50) REFERENCES laporan(id) ON DELETE CASCADE,
+        nama_barang VARCHAR(255) NOT NULL,
+        qty NUMERIC NOT NULL,
+        satuan VARCHAR(50) NOT NULL,
+        harga_rab NUMERIC NOT NULL,
+        total_rab NUMERIC NOT NULL,
+        total_riil NUMERIC NOT NULL,
+        sumber VARCHAR(50) NOT NULL,
+        foto_nota TEXT,
+        catatan TEXT,
+        selisih NUMERIC NOT NULL,
+        deviasi_persen NUMERIC NOT NULL,
+        flagged BOOLEAN NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS koperasi_order (
+        id VARCHAR(50) PRIMARY KEY,
+        id_dapur VARCHAR(50) NOT NULL,
+        nama_dapur VARCHAR(255) NOT NULL,
+        total_harga NUMERIC NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS koperasi_order_items (
+        id SERIAL PRIMARY KEY,
+        order_id VARCHAR(50) REFERENCES koperasi_order(id) ON DELETE CASCADE,
+        nama_barang VARCHAR(255) NOT NULL,
+        qty NUMERIC NOT NULL,
+        satuan VARCHAR(50) NOT NULL,
+        harga_satuan NUMERIC NOT NULL,
+        total NUMERIC NOT NULL
+      );
+    `);
+
+    // Seed default katalog jika tabel katalog kosong
+    const countRes = await client.query('SELECT COUNT(*) FROM koperasi_katalog');
+    if (parseInt(countRes.rows[0].count, 10) === 0) {
+      for (const item of koperasiKatalog) {
+        await client.query(
+          'INSERT INTO koperasi_katalog (id, nama_barang, satuan, harga_satuan) VALUES ($1, $2, $3, $4)',
+          [item.id, item.namaBarang, item.satuan, item.hargaSatuan]
+        );
+      }
+      console.log('🌱 Seed data katalog koperasi berhasil dimasukkan ke database.');
+    }
+
+    client.release();
+  } catch (err) {
+    console.warn('⚠️ Gagal terhubung/inisialisasi tabel PostgreSQL:', err.message);
+    console.log('👉 Server otomatis menggunakan mode aman fallback: In-Memory (RAM).');
+    dbActive = false;
+  }
+}
+
+// Jalankan inisialisasi database
+initDb();
 
 const dapurStore = Array.from({ length: 30 }, (_, index) => {
   const number = index + 1;
@@ -121,33 +246,94 @@ function publicDapur(dapur) {
   return safeDapur;
 }
 
-function filterLaporanByDapur(idDapur) {
-  if (!idDapur || idDapur === 'ALL') return laporanStore;
-  return laporanStore.filter((entry) => entry.idDapur === idDapur);
+async function filterLaporanByDapur(idDapur) {
+  if (!dbActive) {
+    if (!idDapur || idDapur === 'ALL') return laporanStore;
+    return laporanStore.filter((entry) => entry.idDapur === idDapur);
+  }
+
+  try {
+    let query = 'SELECT * FROM laporan';
+    const params = [];
+
+    if (idDapur && idDapur !== 'ALL') {
+      query += ' WHERE id_dapur = $1';
+      params.push(idDapur);
+    }
+    query += ' ORDER BY created_at DESC';
+
+    const res = await pool.query(query, params);
+    const reports = [];
+
+    for (const row of res.rows) {
+      // Ambil items untuk setiap laporan
+      const itemsRes = await pool.query('SELECT * FROM laporan_items WHERE laporan_id = $1', [row.id]);
+      reports.push({
+        id: row.id,
+        idDapur: row.id_dapur,
+        namaDapur: row.nama_dapur,
+        tanggalInput: formatDateKey(row.tanggal_input),
+        targetPorsi: row.target_porsi,
+        batasAnggaran: Number(row.batas_anggaran),
+        fotoMasakan: row.foto_masakan,
+        totalRab: Number(row.total_rab),
+        totalRiil: Number(row.total_riil),
+        hppRiil: Number(row.hpp_riil),
+        hppRab: Number(row.hpp_rab),
+        createdAt: row.created_at.toISOString(),
+        audit: row.audit,
+        items: itemsRes.rows.map((item) => ({
+          id: item.id,
+          namaBarang: item.nama_barang,
+          qty: Number(item.qty),
+          satuan: item.satuan,
+          hargaRab: Number(item.harga_rab),
+          totalRab: Number(item.total_rab),
+          totalRiil: Number(item.total_riil),
+          sumber: item.sumber,
+          fotoNota: item.foto_nota,
+          catatan: item.catatan || '',
+          selisih: Number(item.selisih),
+          deviasiPersen: Number(item.deviasi_persen),
+          flagged: item.flagged,
+        })),
+      });
+    }
+
+    return reports;
+  } catch (err) {
+    console.error('❌ Gagal mengambil laporan dari DB:', err.message);
+    // Fallback ke memori jika DB error tiba-tiba
+    if (!idDapur || idDapur === 'ALL') return laporanStore;
+    return laporanStore.filter((entry) => entry.idDapur === idDapur);
+  }
 }
 
-function buildDapurSummary() {
-  return dapurStore.map((dapur) => {
-    const laporanDapur = filterLaporanByDapur(dapur.id);
-    const audit = buildAudit(laporanDapur);
-    const latest = laporanDapur[0] || null;
+async function buildDapurSummary() {
+  const summaries = await Promise.all(
+    dapurStore.map(async (dapur) => {
+      const laporanDapur = await filterLaporanByDapur(dapur.id);
+      const audit = buildAudit(laporanDapur);
+      const latest = laporanDapur[0] || null;
 
-    return {
-      ...publicDapur(dapur),
-      totalLaporan: laporanDapur.length,
-      totalRab: audit.totalRab,
-      totalRiil: audit.totalRiil,
-      totalMarkupPotensial: audit.totalMarkupPotensial,
-      persenKoperasi: audit.persenKoperasi,
-      flaggedCount: audit.itemsFlagged.length,
-      lastReportAt: latest?.createdAt || null,
-      statusAudit: !latest
-        ? 'BELUM_LAPOR'
-        : audit.status === 'PERLU_INVESTIGASI'
-          ? 'PERLU_INVESTIGASI'
-          : 'NORMAL',
-    };
-  });
+      return {
+        ...publicDapur(dapur),
+        totalLaporan: laporanDapur.length,
+        totalRab: audit.totalRab,
+        totalRiil: audit.totalRiil,
+        totalMarkupPotensial: audit.totalMarkupPotensial,
+        persenKoperasi: audit.persenKoperasi,
+        flaggedCount: audit.itemsFlagged.length,
+        lastReportAt: latest?.createdAt || null,
+        statusAudit: !latest
+          ? 'BELUM_LAPOR'
+          : audit.status === 'PERLU_INVESTIGASI'
+            ? 'PERLU_INVESTIGASI'
+            : 'NORMAL',
+      };
+    })
+  );
+  return summaries;
 }
 
 app.get('/api/health', (_req, res) => {
@@ -185,7 +371,7 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-app.post('/api/laporan', (req, res) => {
+app.post('/api/laporan', async (req, res) => {
   const payload = req.body || {};
   const items = normalizeItems(payload.items || (payload.namaBarang ? [payload] : []));
 
@@ -217,7 +403,61 @@ app.post('/api/laporan', (req, res) => {
     : 0;
   laporan.audit = buildAudit([laporan]);
 
-  laporanStore.unshift(laporan);
+  // Simpan ke Database jika aktif
+  if (dbActive) {
+    try {
+      await pool.query(
+        `INSERT INTO laporan (
+          id, id_dapur, nama_dapur, tanggal_input, target_porsi, batas_anggaran, 
+          foto_masakan, total_rab, total_riil, hpp_riil, hpp_rab, created_at, audit
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [
+          laporan.id,
+          laporan.idDapur,
+          laporan.namaDapur,
+          laporan.tanggalInput,
+          laporan.targetPorsi,
+          laporan.batasAnggaran,
+          laporan.fotoMasakan,
+          laporan.totalRab,
+          laporan.totalRiil,
+          laporan.hppRiil,
+          laporan.hppRab,
+          laporan.createdAt,
+          JSON.stringify(laporan.audit)
+        ]
+      );
+
+      for (const item of items) {
+        await pool.query(
+          `INSERT INTO laporan_items (
+            laporan_id, nama_barang, qty, satuan, harga_rab, total_rab, total_riil, 
+            sumber, foto_nota, catatan, selisih, deviasi_persen, flagged
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            laporan.id,
+            item.namaBarang,
+            item.qty,
+            item.satuan,
+            item.hargaRab,
+            item.totalRab,
+            item.totalRiil,
+            item.sumber,
+            item.fotoNota,
+            item.catatan,
+            item.selisih,
+            item.deviasiPersen,
+            item.flagged
+          ]
+        );
+      }
+    } catch (dbErr) {
+      console.error('❌ Gagal menulis laporan ke DB. Fallback ke RAM.', dbErr.message);
+      laporanStore.unshift(laporan);
+    }
+  } else {
+    laporanStore.unshift(laporan);
+  }
 
   // INTEGRASI KLED0: Otomatis sinkronisasi biaya belanja ke Kledo di background
   syncToKledo(laporan);
@@ -271,21 +511,25 @@ async function syncToKledo(laporan) {
   }
 }
 
-app.get('/api/laporan', (req, res) => {
-  res.json({ success: true, data: filterLaporanByDapur(req.query.idDapur) });
+app.get('/api/laporan', async (req, res) => {
+  const data = await filterLaporanByDapur(req.query.idDapur);
+  res.json({ success: true, data });
 });
 
-app.get('/api/audit', (req, res) => {
-  res.json({ success: true, data: buildAudit(filterLaporanByDapur(req.query.idDapur)) });
+app.get('/api/audit', async (req, res) => {
+  const reports = await filterLaporanByDapur(req.query.idDapur);
+  res.json({ success: true, data: buildAudit(reports) });
 });
 
-app.get('/api/dashboard', (_req, res) => {
+app.get('/api/dashboard', async (_req, res) => {
+  const reports = await filterLaporanByDapur('ALL');
+  const summaries = await buildDapurSummary();
   res.json({
     success: true,
     data: {
-      audit: buildAudit(),
-      dapur: buildDapurSummary(),
-      laporan: laporanStore,
+      audit: buildAudit(reports),
+      dapur: summaries,
+      laporan: reports,
     },
   });
 });
@@ -307,29 +551,87 @@ let koperasiKatalog = [
 
 const orderStore = [];
 
-app.get('/api/koperasi/katalog', (_req, res) => {
+app.get('/api/koperasi/katalog', async (_req, res) => {
+  if (dbActive) {
+    try {
+      const dbRes = await pool.query('SELECT * FROM koperasi_katalog ORDER BY id ASC');
+      const data = dbRes.rows.map(row => ({
+        id: row.id,
+        namaBarang: row.nama_barang,
+        satuan: row.satuan,
+        hargaSatuan: Number(row.harga_satuan)
+      }));
+      return res.json({ success: true, data });
+    } catch (err) {
+      console.error('❌ Gagal ambil katalog dari DB:', err.message);
+    }
+  }
   res.json({ success: true, data: koperasiKatalog });
 });
 
-app.post('/api/koperasi/katalog', (req, res) => {
+app.post('/api/koperasi/katalog', async (req, res) => {
   const { namaBarang, satuan, hargaSatuan } = req.body;
   if (!namaBarang || !satuan || !hargaSatuan) {
     return res.status(400).json({ success: false, message: 'Data produk tidak lengkap.' });
   }
 
+  const cleanNama = String(namaBarang).trim();
+  const cleanSatuan = String(satuan).trim();
+  const numHarga = toNumber(hargaSatuan);
+
+  if (dbActive) {
+    try {
+      const countRes = await pool.query('SELECT COUNT(*) FROM koperasi_katalog');
+      const newId = `KOP-${String(parseInt(countRes.rows[0].count, 10) + 1).padStart(2, '0')}-${Date.now().toString().slice(-4)}`;
+      
+      const insertRes = await pool.query(
+        'INSERT INTO koperasi_katalog (id, nama_barang, satuan, harga_satuan) VALUES ($1, $2, $3, $4) RETURNING *',
+        [newId, cleanNama, cleanSatuan, numHarga]
+      );
+      
+      const row = insertRes.rows[0];
+      return res.status(201).json({
+        success: true,
+        message: 'Produk berhasil diunggah.',
+        data: {
+          id: row.id,
+          namaBarang: row.nama_barang,
+          satuan: row.satuan,
+          hargaSatuan: Number(row.harga_satuan)
+        }
+      });
+    } catch (err) {
+      console.error('❌ Gagal upload katalog ke DB:', err.message);
+    }
+  }
+
+  // Fallback in-memory
   const newProduct = {
     id: `KOP-${String(koperasiKatalog.length + 1).padStart(2, '0')}-${Date.now().toString().slice(-4)}`,
-    namaBarang: String(namaBarang).trim(),
-    satuan: String(satuan).trim(),
-    hargaSatuan: toNumber(hargaSatuan)
+    namaBarang: cleanNama,
+    satuan: cleanSatuan,
+    hargaSatuan: numHarga
   };
-
   koperasiKatalog.push(newProduct);
   res.status(201).json({ success: true, message: 'Produk berhasil diunggah.', data: newProduct });
 });
 
-app.delete('/api/koperasi/katalog/:id', (req, res) => {
+app.delete('/api/koperasi/katalog/:id', async (req, res) => {
   const { id } = req.params;
+
+  if (dbActive) {
+    try {
+      const deleteRes = await pool.query('DELETE FROM koperasi_katalog WHERE id = $1', [id]);
+      if (deleteRes.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' });
+      }
+      return res.json({ success: true, message: 'Produk berhasil dihapus.' });
+    } catch (err) {
+      console.error('❌ Gagal hapus katalog dari DB:', err.message);
+    }
+  }
+
+  // Fallback in-memory
   const initialLength = koperasiKatalog.length;
   koperasiKatalog = koperasiKatalog.filter(item => item.id !== id);
 
@@ -339,12 +641,13 @@ app.delete('/api/koperasi/katalog/:id', (req, res) => {
   res.json({ success: true, message: 'Produk berhasil dihapus.' });
 });
 
-app.post('/api/koperasi/order', (req, res) => {
+app.post('/api/koperasi/order', async (req, res) => {
   const { idDapur, namaDapur, items } = req.body;
   if (!idDapur || !items || !items.length) {
     return res.status(400).json({ success: false, message: 'Data pesanan tidak lengkap.' });
   }
   const totalHarga = items.reduce((sum, item) => sum + (item.qty * item.hargaSatuan), 0);
+  
   const order = {
     id: `ORD-${Date.now()}`,
     idDapur,
@@ -360,12 +663,83 @@ app.post('/api/koperasi/order', (req, res) => {
     status: 'PENDING',
     createdAt: new Date().toISOString()
   };
+
+  if (dbActive) {
+    try {
+      await pool.query(
+        'INSERT INTO koperasi_order (id, id_dapur, nama_dapur, total_harga, status, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+        [order.id, order.idDapur, order.namaDapur, order.totalHarga, order.status, order.createdAt]
+      );
+
+      for (const item of order.items) {
+        await pool.query(
+          'INSERT INTO koperasi_order_items (order_id, nama_barang, qty, satuan, harga_satuan, total) VALUES ($1, $2, $3, $4, $5, $6)',
+          [order.id, item.namaBarang, item.qty, item.satuan, item.hargaSatuan, item.total]
+        );
+      }
+      return res.json({ success: true, message: 'Pesanan kulakan berhasil dibuat.', data: order });
+    } catch (err) {
+      console.error('❌ Gagal menyimpan order ke DB:', err.message);
+    }
+  }
+
+  // Fallback in-memory
   orderStore.unshift(order);
   res.json({ success: true, message: 'Pesanan kulakan berhasil dibuat.', data: order });
 });
 
-app.get('/api/koperasi/order', (req, res) => {
+app.get('/api/koperasi/order', async (req, res) => {
   const { idDapur, status } = req.query;
+
+  if (dbActive) {
+    try {
+      let query = 'SELECT * FROM koperasi_order';
+      const params = [];
+      const conditions = [];
+
+      if (idDapur) {
+        conditions.push(`id_dapur = $${params.length + 1}`);
+        params.push(idDapur);
+      }
+      if (status) {
+        conditions.push(`status = $${params.length + 1}`);
+        params.push(status);
+      }
+
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+      }
+      query += ' ORDER BY created_at DESC';
+
+      const ordersRes = await pool.query(query, params);
+      const orders = [];
+
+      for (const row of ordersRes.rows) {
+        const itemsRes = await pool.query('SELECT * FROM koperasi_order_items WHERE order_id = $1', [row.id]);
+        orders.push({
+          id: row.id,
+          idDapur: row.id_dapur,
+          namaDapur: row.nama_dapur,
+          totalHarga: Number(row.total_harga),
+          status: row.status,
+          createdAt: row.created_at.toISOString(),
+          items: itemsRes.rows.map(item => ({
+            namaBarang: item.nama_barang,
+            qty: Number(item.qty),
+            satuan: item.satuan,
+            hargaSatuan: Number(item.harga_satuan),
+            total: Number(item.total)
+          }))
+        });
+      }
+
+      return res.json({ success: true, data: orders });
+    } catch (err) {
+      console.error('❌ Gagal mengambil order dari DB:', err.message);
+    }
+  }
+
+  // Fallback in-memory
   let filtered = orderStore;
   if (idDapur) {
     filtered = filtered.filter(o => o.idDapur === idDapur);
@@ -376,9 +750,48 @@ app.get('/api/koperasi/order', (req, res) => {
   res.json({ success: true, data: filtered });
 });
 
-app.post('/api/koperasi/order/:id/status', (req, res) => {
+app.post('/api/koperasi/order/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+
+  if (dbActive) {
+    try {
+      const updateRes = await pool.query(
+        'UPDATE koperasi_order SET status = $1 WHERE id = $2 RETURNING *',
+        [status, id]
+      );
+      if (updateRes.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
+      }
+      
+      const row = updateRes.rows[0];
+      const itemsRes = await pool.query('SELECT * FROM koperasi_order_items WHERE order_id = $1', [id]);
+      
+      return res.json({
+        success: true,
+        message: `Status pesanan diupdate menjadi ${status}.`,
+        data: {
+          id: row.id,
+          idDapur: row.id_dapur,
+          namaDapur: row.nama_dapur,
+          totalHarga: Number(row.total_harga),
+          status: row.status,
+          createdAt: row.created_at.toISOString(),
+          items: itemsRes.rows.map(item => ({
+            namaBarang: item.nama_barang,
+            qty: Number(item.qty),
+            satuan: item.satuan,
+            hargaSatuan: Number(item.harga_satuan),
+            total: Number(item.total)
+          }))
+        }
+      });
+    } catch (err) {
+      console.error('❌ Gagal update status order di DB:', err.message);
+    }
+  }
+
+  // Fallback in-memory
   const order = orderStore.find(o => o.id === id);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
