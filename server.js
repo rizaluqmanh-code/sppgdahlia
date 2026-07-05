@@ -598,6 +598,7 @@ app.post('/api/laporan', authenticateToken, async (req, res) => {
 });
 
 // Helper integrasi API Kledo
+// Helper integrasi API Kledo
 async function syncToKledo(laporan) {
   const kledoUrl = process.env.KLEDO_API_URL;
   const kledoToken = process.env.KLEDO_API_TOKEN;
@@ -608,20 +609,66 @@ async function syncToKledo(laporan) {
     return;
   }
 
-  console.log(`⏳ [Kledo Sync] Mengirim pengeluaran ${laporan.namaDapur} senilai Rp ${laporan.totalRiil.toLocaleString('id-ID')}...`);
+  const namaDapurTag = laporan.namaDapur || 'Dapur SPPG';
+  console.log(`⏳ [Kledo Sync] Memulai sinkronisasi belanja untuk ${namaDapurTag} senilai Rp ${laporan.totalRiil.toLocaleString('id-ID')}...`);
+
   try {
+    // 1. Kueri list tag yang ada di Kledo untuk mencari tag dapur
+    const getTagsRes = await fetch(`${kledoUrl}/finance/tags?per_page=1000`, {
+      method: 'GET',
+      headers: {
+        'Authorization': kledoToken,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    let tagId = null;
+    if (getTagsRes.ok) {
+      const getTagsJson = await getTagsRes.json();
+      if (getTagsJson.success && getTagsJson.data && Array.isArray(getTagsJson.data.data)) {
+        const found = getTagsJson.data.data.find(t => t.name.toLowerCase().trim() === namaDapurTag.toLowerCase().trim());
+        if (found) {
+          tagId = found.id;
+        }
+      }
+    }
+
+    // 2. Jika tag dapur belum ada di Kledo, buat secara otomatis
+    if (!tagId) {
+      console.log(`🌱 [Kledo Sync] Tag "${namaDapurTag}" belum terdaftar. Mendaftarkan tag baru di Kledo...`);
+      const createTagRes = await fetch(`${kledoUrl}/finance/tags`, {
+        method: 'POST',
+        headers: {
+          'Authorization': kledoToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: namaDapurTag })
+      });
+      if (createTagRes.ok) {
+        const createTagJson = await createTagRes.json();
+        if (createTagJson.success && createTagJson.data) {
+          tagId = createTagJson.data.id;
+          console.log(`✅ [Kledo Sync] Tag baru berhasil didaftarkan dengan ID: ${tagId}`);
+        }
+      }
+    }
+
+    // 3. Susun payload expense dengan tags, contact_id, dan pay_from_finance_account_id
     const payload = {
+      contact_id: 1, // POS Customer
+      pay_from_finance_account_id: 1, // Kas
       trans_date: laporan.tanggalInput,
       due_date: laporan.tanggalInput,
       is_paid: true,
       memo: `Belanja bahan makanan ${laporan.namaDapur} (LAP: ${laporan.id})`,
       items: [
         {
-          account_id: Number(kledoAccountId),
+          finance_account_id: Number(kledoAccountId),
           amount: laporan.totalRiil,
           description: `Total realisasi belanja bahan makanan`
         }
-      ]
+      ],
+      tags: tagId ? [Number(tagId)] : []
     };
 
     // Sertakan attachment jika ada foto nota/masakan
@@ -630,7 +677,6 @@ async function syncToKledo(laporan) {
       payload.attachment = attachmentUrl;
     }
 
-    // Gunakan subpath /finance/expenses untuk API Kledo
     const response = await fetch(`${kledoUrl}/finance/expenses`, {
       method: 'POST',
       headers: {
@@ -662,7 +708,7 @@ async function syncToKledo(laporan) {
     }
 
     if (response.ok && result.success) {
-      console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo dengan ID: ${result.data?.id}`);
+      console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo dengan ID: ${result.data?.id} (Tag: ${namaDapurTag})`);
     } else {
       console.warn(`⚠️ [Kledo Sync] Kledo menolak data: ${result.message || response.statusText}`);
     }
