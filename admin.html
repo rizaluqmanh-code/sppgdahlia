@@ -158,13 +158,29 @@
       </div>
 
       <!-- Audit Flags / Investigasi list -->
-      <aside class="glass rounded-2xl shadow-xl overflow-hidden flex flex-col">
-        <div class="px-5 py-4 border-b border-slate-900">
-          <h2 class="text-sm font-black text-white">Item Risiko / Perlu Investigasi</h2>
-          <p class="text-[11px] text-slate-400 mt-0.5">Bahan masakan dengan deviasi harga >10% atau tanpa foto.</p>
+      <aside class="space-y-6 flex flex-col">
+        <!-- AI Smart Auditor Card -->
+        <div class="glass rounded-2xl shadow-xl overflow-hidden flex flex-col">
+          <div class="px-5 py-4 border-b border-slate-900 bg-indigo-950/20">
+            <h2 class="text-sm font-black text-white flex items-center gap-1.5">
+              <span>🤖</span> AI Smart Auditor & Advisor
+            </h2>
+            <p class="text-[11px] text-indigo-300 mt-0.5 font-bold">Rekomendasi belanja Koperasi berbasis AI Gemini.</p>
+          </div>
+          <div id="aiAdvisoryContainer" class="p-5 text-xs text-slate-300 space-y-3 leading-relaxed">
+            <p class="text-slate-500 italic text-[11px]">Pilih dapur atau laporan untuk melihat saran belanja AI.</p>
+          </div>
         </div>
-        <div id="flaggedList" class="divide-y divide-slate-900 overflow-y-auto max-h-[500px] flex-1">
-          <!-- Rendered by JS -->
+
+        <!-- Flagged List Card -->
+        <div class="glass rounded-2xl shadow-xl overflow-hidden flex flex-col flex-1">
+          <div class="px-5 py-4 border-b border-slate-900">
+            <h2 class="text-sm font-black text-white">Item Risiko / Perlu Investigasi</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Bahan masakan dengan deviasi harga >10% atau tanpa foto.</p>
+          </div>
+          <div id="flaggedList" class="divide-y divide-slate-900 overflow-y-auto max-h-[350px] flex-1">
+            <!-- Rendered by JS -->
+          </div>
         </div>
       </aside>
     </section>
@@ -561,6 +577,66 @@
       // Render Tables
       renderLaporanTable(laporanToShow);
       renderFlaggedList(flaggedToShow);
+
+      // Update AI Advisory Container
+      const advisoryContainer = document.getElementById('aiAdvisoryContainer');
+      if (selectedDapurId === 'ALL') {
+        const globalRatio = Math.round(auditToShow.persenKoperasi || 0);
+        advisoryContainer.innerHTML = `
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-400">Rasio Koperasi Global:</span>
+              <span class="font-black text-sm ${globalRatio < 50 ? 'text-rose-400' : 'text-emerald-400'}">${globalRatio}%</span>
+            </div>
+            <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+              <div class="h-full ${globalRatio < 50 ? 'bg-rose-500' : 'bg-emerald-500'}" style="width: ${globalRatio}%"></div>
+            </div>
+            <p class="text-slate-450 leading-relaxed mt-2 text-[11px]">
+              ${globalRatio < 50 
+                ? '⚠️ Pengeluaran belanja koperasi secara agregat 30 dapur masih berada di bawah target 50%. Pilih salah satu dapur untuk melihat analisis & rekomendasi belanja AI spesifik.' 
+                : '✅ Bagus! Pembelanjaan agregat 30 dapur telah memenuhi standar 50% belanja koperasi.'}
+            </p>
+          </div>
+        `;
+      } else {
+        // Find latest report for this kitchen
+        const kitchenReports = globalDashboardData.laporan.filter(l => l.idDapur === selectedDapurId);
+        const latestReport = kitchenReports[0] || null;
+
+        if (latestReport) {
+          const ratio = Math.round(latestReport.audit?.persenKoperasi || 0);
+          const aiAdvisoryText = latestReport.audit?.aiAdvisory || 'AI sedang menganalisis data belanja...';
+          
+          advisoryContainer.innerHTML = `
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-slate-400">Rasio Belanja Koperasi:</span>
+                <span class="font-black text-sm ${ratio < 50 ? 'text-rose-400' : 'text-emerald-400'}">${ratio}%</span>
+              </div>
+              <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+                <div class="h-full ${ratio < 50 ? 'bg-rose-500' : 'bg-emerald-500'}" style="width: ${ratio}%"></div>
+              </div>
+              
+              <div class="mt-3 p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
+                <p class="font-bold text-[9px] uppercase tracking-wider text-indigo-400 flex items-center gap-1">
+                  <span>🤖</span> Gemini AI Advisory
+                </p>
+                <p class="text-[11px] leading-relaxed text-slate-200 font-bold">${aiAdvisoryText}</p>
+              </div>
+
+              ${ratio < 50 
+                ? '<div class="text-[9px] font-black text-rose-400 bg-rose-950/20 border border-rose-900/20 rounded-lg p-2.5 text-center">⚠️ BELUM MEMENUHI TARGET 50% BELANJA KOPERASI</div>' 
+                : '<div class="text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/20 rounded-lg p-2.5 text-center">✅ MEMENUHI TARGET 50% BELANJA KOPERASI</div>'}
+            </div>
+          `;
+        } else {
+          advisoryContainer.innerHTML = `
+            <div class="p-4 text-center text-slate-500 text-[11px]">
+              Belum ada berkas laporan belanja terkirim untuk dapur ini. Silakan input laporan di aplikasi PIC untuk memicu analisis AI.
+            </div>
+          `;
+        }
+      }
     }
 
     function renderKitchenGrid() {
@@ -624,6 +700,13 @@
             <td class="p-4 border-b border-slate-900">
               <p class="font-black text-white group-hover:text-emerald-400 transition-colors">${item.namaDapur}</p>
               <p class="text-[10px] text-slate-400 mt-0.5">${item.tanggalInput} - ${item.items.length} item</p>
+              <div class="flex items-center gap-1.5 mt-1 text-[10px] font-bold">
+                <span class="text-slate-550">Koperasi:</span>
+                <span class="${(item.audit?.persenKoperasi || 0) < 50 ? 'text-rose-400' : 'text-emerald-400'}">${Math.round(item.audit?.persenKoperasi || 0)}%</span>
+                ${(item.audit?.persenKoperasi || 0) < 50 
+                  ? '<span class="text-[8px] bg-rose-950/45 text-rose-400 border border-rose-900/30 px-1.5 py-0.5 rounded font-black">⚠️ &lt; 50%</span>' 
+                  : '<span class="text-[8px] bg-emerald-950/45 text-emerald-400 border border-emerald-900/30 px-1.5 py-0.5 rounded font-black">LULUS</span>'}
+              </div>
             </td>
             <td class="p-4 text-right font-mono border-b border-slate-900">
               <p class="text-xs text-slate-300 font-bold">${formatRp(item.totalRab || item.batasAnggaran)}</p>

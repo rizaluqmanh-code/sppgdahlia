@@ -1367,9 +1367,51 @@ function App() {
               </div>
 
               {lastSubmit && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
-                  <p className="text-xs font-black text-emerald-800">Laporan terakhir: {lastSubmit.id}</p>
-                  <p className="text-[10px] text-emerald-700 mt-1">Sudah masuk backend dan dapat dibaca dashboard yayasan.</p>
+                <div className="space-y-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2">
+                    <p className="text-xs font-black text-emerald-800">Laporan terkirim: {lastSubmit.id}</p>
+                    <p className="text-[10px] text-emerald-700">Audit lokal & data Sheets otomatis diperbarui.</p>
+                  </div>
+                  
+                  {/* AI Koperasi Signal Card */}
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-indigo-950 uppercase tracking-wider">Rasio Belanja Koperasi</span>
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                        (lastSubmit.audit?.persenKoperasi || 0) < 50 
+                          ? 'bg-rose-100 text-rose-700 border border-rose-200' 
+                          : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        {Math.round(lastSubmit.audit?.persenKoperasi || 0)}%
+                      </span>
+                    </div>
+                    
+                    <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className={`h-full ${(lastSubmit.audit?.persenKoperasi || 0) < 50 ? 'bg-rose-500' : 'bg-emerald-500'}`} 
+                        style={{ width: `${Math.round(lastSubmit.audit?.persenKoperasi || 0)}%` }}
+                      ></div>
+                    </div>
+
+                    <div className="p-3 bg-white/80 border border-indigo-100 rounded-xl space-y-1.5">
+                      <p className="font-bold text-[9px] uppercase tracking-wider text-indigo-700 flex items-center gap-1">
+                        <span>🤖</span> AI Sinyal & Saran Koperasi
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-slate-800 font-bold">
+                        {lastSubmit.audit?.aiAdvisory || 'AI sedang memproses saran belanja...'}
+                      </p>
+                    </div>
+
+                    {(lastSubmit.audit?.persenKoperasi || 0) < 50 ? (
+                      <div className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-100 rounded-lg py-2 text-center">
+                        ⚠️ BELUM MEMENUHI TARGET MINIMAL 50%
+                      </div>
+                    ) : (
+                      <div className="text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg py-2 text-center">
+                        ✅ MEMENUHI TARGET MINIMAL 50%
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

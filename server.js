@@ -573,6 +573,71 @@ app.put('/api/dapur/:id', async (req, res) => {
   }
 });
 
+async function generateAiAdvisory(laporan) {
+  const totalRiil = Number(laporan.totalRiil) || 0;
+  const auditData = laporan.audit || {};
+  const rasioKoperasi = Number(auditData.persenKoperasi) || 0;
+
+  const allItems = laporan.items || [];
+  const totalKoperasi = allItems
+    .filter((item) => String(item.sumber || '').toUpperCase().includes('KOPERASI'))
+    .reduce((sum, item) => sum + Number(item.totalRiil || 0), 0);
+
+  const itemsLuar = allItems.filter((item) => !String(item.sumber || '').toUpperCase().includes('KOPERASI'));
+
+  if (!ai) {
+    if (rasioKoperasi >= 50) {
+      return `Bagus! Belanja Koperasi Anda mencapai ${rasioKoperasi.toFixed(0)}%, memenuhi target minimal 50%. Pertahankan kinerja ini!`;
+    } else {
+      if (itemsLuar.length > 0) {
+        const itemNames = itemsLuar.slice(0, 2).map(i => i.namaBarang).join(' & ');
+        return `Sinyal: Belanja Koperasi baru ${rasioKoperasi.toFixed(0)}% (Target: 50%). Disarankan membeli ${itemNames} di Koperasi SPPG pada belanja berikutnya agar mencapai target.`;
+      }
+      return `Sinyal: Belanja Koperasi baru ${rasioKoperasi.toFixed(0)}% (Target: 50%). Harap tingkatkan transaksi belanja di Koperasi SPPG.`;
+    }
+  }
+
+  try {
+    const prompt = `
+Anda adalah Auditor AI Keuangan untuk Yayasan SPPG.
+Target belanja dapur dari koperasi adalah minimal 50% dari total pengeluaran belanja bahan makanan.
+Berikut adalah data belanja dapur hari ini:
+- Nama Dapur: ${laporan.namaDapur}
+- Total Belanja Riil: Rp ${totalRiil.toLocaleString('id-ID')}
+- Total Belanja Koperasi: Rp ${totalKoperasi.toLocaleString('id-ID')}
+- Rasio Belanja Koperasi saat ini: ${rasioKoperasi.toFixed(1)}%
+- Daftar Bahan Makanan yang dibeli di Luar Koperasi:
+${itemsLuar.map(i => `- ${i.namaBarang}: Qty ${i.qty} ${i.satuan}, Total Rp ${i.totalRiil.toLocaleString('id-ID')}, Dibeli dari: ${i.sumber}`).join('\n')}
+
+Tugas Anda:
+1. Jika Rasio Belanja Koperasi < 50%, berikan sinyal peringatan dan saran tindakan (maksimal 2 kalimat) dalam Bahasa Indonesia yang formal namun ramah. Sebutkan secara spesifik bahan makanan apa saja yang dibeli di luar koperasi hari ini yang sebaiknya dibeli di Koperasi SPPG untuk pembelanjaan berikutnya agar rasio mencapai target 50%.
+2. Jika Rasio Belanja Koperasi >= 50%, berikan kalimat apresiasi singkat (maksimal 1 kalimat) dalam Bahasa Indonesia karena telah memenuhi atau melampaui target koperasi.
+
+Format keluaran: Kembalikan teks saran langsung tanpa ada intro, outtro, atau format markdown (seperti **tebal** atau list). Tuliskan dalam bentuk paragraf teks mengalir.
+`;
+
+    const responseAI = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+
+    const advisory = responseAI.text ? responseAI.text.trim() : '';
+    if (advisory) {
+      console.log(`✅ [AI Advisory Generated] untuk ${laporan.namaDapur}: "${advisory}"`);
+      return advisory;
+    }
+    throw new Error('Response AI kosong');
+  } catch (err) {
+    console.error('❌ Gagal menghasilkan AI Advisory:', err.message);
+    if (rasioKoperasi >= 50) {
+      return `Apresiasi: Belanja Koperasi Anda mencapai ${rasioKoperasi.toFixed(0)}% (Memenuhi target 50%).`;
+    } else {
+      const itemNames = itemsLuar.slice(0, 2).map(i => i.namaBarang).join(' & ');
+      return `Sinyal: Belanja Koperasi baru ${rasioKoperasi.toFixed(0)}% (Target: 50%). Disarankan membeli ${itemNames || 'bahan makanan'} di Koperasi SPPG pada belanja berikutnya.`;
+    }
+  }
+}
+
 app.post('/api/laporan', authenticateToken, async (req, res) => {
   const payload = req.body || {};
   const items = normalizeItems(payload.items || (payload.namaBarang ? [payload] : []));
@@ -620,6 +685,11 @@ app.post('/api/laporan', authenticateToken, async (req, res) => {
     ? (laporan.batasAnggaran || laporan.totalRab) / laporan.targetPorsi
     : 0;
   laporan.audit = buildAudit([laporan]);
+
+  // Hasilkan rekomendasi AI secara asinkron sebelum menyimpan
+  const aiAdvisory = await generateAiAdvisory(laporan);
+  laporan.audit.aiAdvisory = aiAdvisory;
+  laporan.audit.koperasiWarning = (laporan.audit.persenKoperasi < 50);
 
   // Simpan ke Database jika aktif
   if (dbActive) {
