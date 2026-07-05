@@ -219,12 +219,57 @@ app.post('/api/laporan', (req, res) => {
 
   laporanStore.unshift(laporan);
 
+  // INTEGRASI KLED0: Otomatis sinkronisasi biaya belanja ke Kledo di background
+  syncToKledo(laporan);
+
   res.status(201).json({
     success: true,
     message: 'Laporan diterima dan diaudit.',
     data: laporan,
   });
 });
+
+// Helper integrasi API Kledo
+async function syncToKledo(laporan) {
+  const kledoUrl = process.env.KLEDO_API_URL;
+  const kledoToken = process.env.KLEDO_API_TOKEN;
+  const kledoAccountId = process.env.KLEDO_EXPENSE_ACCOUNT_ID;
+
+  if (!kledoUrl || !kledoToken || !kledoAccountId) {
+    console.log('ℹ️ [Kledo Sync] Dilewati. Lengkapi KLEDO_API_URL, TOKEN, dan ACCOUNT_ID di file .env untuk mengaktifkan.');
+    return;
+  }
+
+  console.log(`⏳ [Kledo Sync] Mengirim pengeluaran ${laporan.namaDapur} senilai Rp ${laporan.totalRiil.toLocaleString('id-ID')}...`);
+  try {
+    const payload = {
+      trans_date: laporan.tanggalInput,
+      amount: laporan.totalRiil,
+      account_id: Number(kledoAccountId),
+      memo: `Belanja bahan makanan ${laporan.namaDapur} (LAP: ${laporan.id})`,
+      // Kita kirimkan file foto nota (jika ada) ke Kledo sebagai attachment
+      attachment: laporan.items.find(item => item.fotoNota)?.fotoNota || laporan.fotoMasakan || null
+    };
+
+    const response = await fetch(`${kledoUrl}/expenses`, {
+      method: 'POST',
+      headers: {
+        'Authorization': kledoToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    if (response.ok && result.success) {
+      console.log(`✅ [Kledo Sync] Transaksi berhasil tercatat di Kledo dengan ID: ${result.data?.id}`);
+    } else {
+      console.warn(`⚠️ [Kledo Sync] Kledo menolak data: ${result.message || response.statusText}`);
+    }
+  } catch (error) {
+    console.error('❌ [Kledo Sync] Gagal menghubungi server Kledo:', error.message);
+  }
+}
 
 app.get('/api/laporan', (req, res) => {
   res.json({ success: true, data: filterLaporanByDapur(req.query.idDapur) });
