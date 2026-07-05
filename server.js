@@ -249,7 +249,7 @@ app.get('/api/dashboard', (_req, res) => {
 // KOPERASI MARKETPLACE APIS
 // =========================================================================
 
-const koperasiKatalog = [
+let koperasiKatalog = [
   { id: 'KOP-01', namaBarang: 'Beras Medium', satuan: 'Kg', hargaSatuan: 14000 },
   { id: 'KOP-02', namaBarang: 'Telur Ayam', satuan: 'Kg', hargaSatuan: 26000 },
   { id: 'KOP-03', namaBarang: 'Minyak Goreng Sunco 2L', satuan: 'Pcs', hargaSatuan: 38000 },
@@ -264,6 +264,34 @@ const orderStore = [];
 
 app.get('/api/koperasi/katalog', (_req, res) => {
   res.json({ success: true, data: koperasiKatalog });
+});
+
+app.post('/api/koperasi/katalog', (req, res) => {
+  const { namaBarang, satuan, hargaSatuan } = req.body;
+  if (!namaBarang || !satuan || !hargaSatuan) {
+    return res.status(400).json({ success: false, message: 'Data produk tidak lengkap.' });
+  }
+
+  const newProduct = {
+    id: `KOP-${String(koperasiKatalog.length + 1).padStart(2, '0')}-${Date.now().toString().slice(-4)}`,
+    namaBarang: String(namaBarang).trim(),
+    satuan: String(satuan).trim(),
+    hargaSatuan: toNumber(hargaSatuan)
+  };
+
+  koperasiKatalog.push(newProduct);
+  res.status(201).json({ success: true, message: 'Produk berhasil diunggah.', data: newProduct });
+});
+
+app.delete('/api/koperasi/katalog/:id', (req, res) => {
+  const { id } = req.params;
+  const initialLength = koperasiKatalog.length;
+  koperasiKatalog = koperasiKatalog.filter(item => item.id !== id);
+
+  if (koperasiKatalog.length === initialLength) {
+    return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' });
+  }
+  res.json({ success: true, message: 'Produk berhasil dihapus.' });
 });
 
 app.post('/api/koperasi/order', (req, res) => {

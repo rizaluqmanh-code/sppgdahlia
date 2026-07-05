@@ -1346,64 +1346,104 @@ function App() {
           )}
 
           {currentPage === 'kulakan' && (
-            <section className="p-4 space-y-4">
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-                <h2 className="text-sm font-black text-slate-800">Kulakan Koperasi Pusat</h2>
-                <p className="text-[10px] text-slate-500 mt-1">Pesan bahan curah / grosir dari Koperasi Pusat untuk menambah stok gudang dapur Anda.</p>
+            <section className="p-4 space-y-4 animate-fade-in">
+              <div className="bg-emerald-700 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                <div className="absolute right-[-10px] bottom-[-20px] text-7xl opacity-10 pointer-events-none">🏪</div>
+                <h2 className="text-sm font-bold uppercase tracking-wide text-emerald-100">Kulakan Koperasi Pusat</h2>
+                <p className="text-[10px] text-emerald-200/90 mt-1 leading-relaxed">
+                  Pesan bahan baku curah / grosir berkualitas langsung dari Koperasi Pusat untuk mengisi kembali stok dapur Anda.
+                </p>
               </div>
 
-              <form onSubmit={handleSubmitKulakan} className="space-y-4">
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                  {katalog.map((item) => {
-                    const qty = kulakanInput[item.namaBarang] || '';
-                    return (
-                      <div key={item.id} className="p-3 flex justify-between items-center gap-3">
-                        <div className="flex-1">
-                          <p className="text-xs font-black text-slate-800">{item.namaBarang}</p>
-                          <p className="text-[10px] text-slate-500">{formatRp(item.hargaSatuan)} / {item.satuan}</p>
-                        </div>
-                        <input
-                          type="number"
-                          min="0"
-                          value={qty}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setKulakanInput(prev => ({
-                              ...prev,
-                              [item.namaBarang]: val === '' ? '' : Math.max(0, Number(val))
-                            }));
-                          }}
-                          placeholder="0"
-                          className="w-16 border border-slate-200 rounded-lg p-1.5 text-center text-xs font-bold outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                    );
-                  })}
+              {katalog.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-400 shadow-sm">
+                  Tidak ada produk yang tersedia di katalog saat ini.
                 </div>
+              ) : (
+                <form onSubmit={handleSubmitKulakan} className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3">
+                    {katalog.map((item) => {
+                      const qty = Number(kulakanInput[item.namaBarang] || 0);
+                      
+                      const setQtyValue = (val) => {
+                        const num = Math.max(0, val);
+                        setKulakanInput(prev => ({
+                          ...prev,
+                          [item.namaBarang]: num === 0 ? '' : num
+                        }));
+                      };
 
-                {/* Ringkasan Total Pesanan */}
-                {Object.values(kulakanInput).some(v => Number(v) > 0) && (
-                  <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm space-y-2">
-                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Estimasi Tagihan</p>
-                    <p className="text-xl font-black text-emerald-400">
-                      {formatRp(
-                        Object.entries(kulakanInput).reduce((sum, [namaBarang, qty]) => {
-                          const product = katalog.find(p => p.namaBarang === namaBarang);
-                          return sum + ((Number(qty) || 0) * (product ? product.hargaSatuan : 0));
-                        }, 0)
-                      )}
-                    </p>
+                      return (
+                        <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-3.5 shadow-sm hover:shadow-md transition-all flex items-center justify-between gap-4">
+                          {/* Nama & Harga Produk */}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-slate-800 truncate">{item.namaBarang}</p>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className="text-xs font-bold text-emerald-600">{formatRp(item.hargaSatuan)}</span>
+                              <span className="text-[9px] text-slate-400 font-medium">/ {item.satuan}</span>
+                            </div>
+                            <p className="text-[8px] text-slate-400 font-mono mt-0.5">Kode: {item.id}</p>
+                          </div>
+
+                          {/* Tombol Plus Minus Kuantitas */}
+                          <div className="flex items-center bg-slate-100 rounded-xl p-1 shrink-0 border border-slate-200/40">
+                            <button
+                              type="button"
+                              onClick={() => setQtyValue(qty - 1)}
+                              className="h-7 w-7 rounded-lg bg-white shadow-sm border border-slate-200/60 flex items-center justify-center text-xs font-bold text-slate-600 hover:bg-slate-50 active:scale-95 transition-all"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              value={qty || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQtyValue(val === '' ? 0 : Number(val));
+                              }}
+                              placeholder="0"
+                              className="w-10 text-center text-xs font-black text-slate-800 bg-transparent outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setQtyValue(qty + 1)}
+                              className="h-7 w-7 rounded-lg bg-white shadow-sm border border-slate-200/60 flex items-center justify-center text-xs font-bold text-slate-600 hover:bg-slate-50 active:scale-95 transition-all"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
 
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-emerald-700 disabled:opacity-60 text-white rounded-2xl py-4 text-xs font-black uppercase tracking-widest shadow-sm"
-                >
-                  {isLoading ? 'Mengirim...' : 'Kirim Pesanan Kulakan'}
-                </button>
-              </form>
+                  {/* Ringkasan Total Pesanan (Melayang/Glow) */}
+                  {Object.values(kulakanInput).some(v => Number(v) > 0) && (
+                    <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-lg border border-slate-800 flex items-center justify-between gap-4 animate-fade-in">
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Belanja</p>
+                        <p className="text-lg font-black text-emerald-400 mt-0.5">
+                          {formatRp(
+                            Object.entries(kulakanInput).reduce((sum, [namaBarang, qty]) => {
+                              const product = katalog.find(p => p.namaBarang === namaBarang);
+                              return sum + ((Number(qty) || 0) * (product ? product.hargaSatuan : 0));
+                            }, 0)
+                          )}
+                        </p>
+                      </div>
+                      
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="bg-emerald-600 hover:bg-emerald-500 active:scale-[0.97] disabled:opacity-60 text-white rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-wider shadow-md shadow-emerald-950/40 transition-all"
+                      >
+                        {isLoading ? 'Mengirim...' : 'Kirim Pesanan'}
+                      </button>
+                    </div>
+                  )}
+                </form>
+              )}
             </section>
           )}
         </main>

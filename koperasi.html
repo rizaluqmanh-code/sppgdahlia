@@ -105,6 +105,37 @@
 
       <!-- Cooperative Catalog & Inventory (Right) -->
       <div class="space-y-4">
+        <!-- Form Unggah Produk Baru -->
+        <h2 class="text-md font-black text-white">Unggah Produk Koperasi</h2>
+        <div class="glass rounded-2xl p-5 shadow-sm border border-slate-900">
+          <form id="uploadProductForm" onsubmit="uploadProduct(event)" class="space-y-3">
+            <div>
+              <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nama Bahan/Barang</label>
+              <input type="text" id="prodNama" required placeholder="Contoh: Daging Sapi Murni" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Satuan</label>
+                <select id="prodSatuan" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
+                  <option value="Kg">Kg</option>
+                  <option value="Pcs">Pcs</option>
+                  <option value="Bks">Bks</option>
+                  <option value="Botol">Botol</option>
+                  <option value="Dus">Dus</option>
+                  <option value="Pack">Pack</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Harga Satuan (Rp)</label>
+                <input type="number" id="prodHarga" required placeholder="Contoh: 12000" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
+              </div>
+            </div>
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black py-2 rounded-xl transition-all shadow-lg shadow-emerald-950/20">
+              Unggah Produk
+            </button>
+          </form>
+        </div>
+
         <h2 class="text-md font-black text-white">Daftar Harga & Katalog Koperasi</h2>
         <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900">
           <div id="catalogList" class="space-y-3 divide-y divide-slate-900">
@@ -153,16 +184,66 @@
 
       container.innerHTML = catalog.map((item, idx) => `
         <div class="flex justify-between items-center py-2.5 ${idx > 0 ? 'border-t border-slate-800' : ''}">
-          <div>
-            <p class="text-xs font-black text-slate-200">${item.namaBarang}</p>
+          <div class="flex-1 min-w-0 pr-2">
+            <p class="text-xs font-black text-slate-200 truncate">${item.namaBarang}</p>
             <p class="text-[9px] text-slate-500 font-bold">Kode: ${item.id}</p>
           </div>
-          <div class="text-right">
-            <p class="text-xs font-black text-emerald-400">${formatRp(item.hargaSatuan)}</p>
-            <p class="text-[9px] text-slate-500 font-bold">per ${item.satuan}</p>
+          <div class="text-right flex items-center gap-3">
+            <div>
+              <p class="text-xs font-black text-emerald-400">${formatRp(item.hargaSatuan)}</p>
+              <p class="text-[9px] text-slate-500 font-bold">per ${item.satuan}</p>
+            </div>
+            <button onclick="deleteProduct('${item.id}')" title="Hapus Produk" class="text-rose-500 hover:text-rose-400 p-1 hover:bg-rose-950/20 rounded-lg transition-colors">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
           </div>
         </div>
       `).join('');
+    }
+
+    async function uploadProduct(event) {
+      event.preventDefault();
+      const namaBarang = document.getElementById('prodNama').value;
+      const satuan = document.getElementById('prodSatuan').value;
+      const hargaSatuan = document.getElementById('prodHarga').value;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/koperasi/katalog`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ namaBarang, satuan, hargaSatuan })
+        });
+        const resData = await response.json();
+        if (resData.success) {
+          alert('Produk berhasil diunggah!');
+          document.getElementById('uploadProductForm').reset();
+          loadOrders();
+        } else {
+          alert('Gagal unggah: ' + resData.message);
+        }
+      } catch (err) {
+        alert('Gagal mengunggah produk: ' + err.message);
+      }
+    }
+
+    async function deleteProduct(productId) {
+      if (!confirm('Apakah Anda yakin ingin menghapus produk ini dari katalog?')) return;
+      try {
+        const response = await fetch(`${API_BASE}/api/koperasi/katalog/${productId}`, {
+          method: 'DELETE'
+        });
+        const resData = await response.json();
+        if (resData.success) {
+          alert('Produk berhasil dihapus!');
+          loadOrders();
+        } else {
+          alert('Gagal menghapus: ' + resData.message);
+        }
+      } catch (err) {
+        alert('Gagal menghapus produk: ' + err.message);
+      }
     }
 
     function renderKPIs() {
