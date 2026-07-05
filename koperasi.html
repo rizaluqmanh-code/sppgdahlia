@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Koperasi SPPG - Wholesaling Suite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+    }
+    .glass {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #10b981;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-emerald-500 selection:text-slate-950">
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+          <span class="text-emerald-400 font-black text-lg">K</span>
+        </div>
+        <div>
+          <p class="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">SPPG Supply Chain</p>
+          <h1 class="text-lg font-black text-white tracking-tight">Portal Gudang & Koperasi Pusat</h1>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="block">
+          <select id="statusFilter" onchange="filterOrders()" class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors w-44">
+            <option value="ALL">Semua Status</option>
+            <option value="PENDING">Baru (Pending)</option>
+            <option value="DIKIRIM">Dalam Pengiriman</option>
+            <option value="SELESAI">Selesai</option>
+          </select>
+        </label>
+        <button onclick="loadOrders()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20 hover:shadow-emerald-600/10">Refresh Data</button>
+        <a href="/admin.html" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-black px-4 py-2.5 rounded-xl transition-colors">Portal Yayasan</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <!-- KPI Summary Section -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
+        <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Omset Penjualan</p>
+        <p id="kpiOmset" class="text-2xl font-black mt-2 text-emerald-400">Rp 0</p>
+        <p class="text-[10px] text-slate-500 mt-1">Akumulasi tagihan kulakan</p>
+      </div>
+      <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
+        <div class="absolute right-3 top-3 h-2 w-2 rounded-full bg-amber-500 animate-ping"></div>
+        <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Pesanan Baru (Pending)</p>
+        <p id="kpiPending" class="text-2xl font-black mt-2 text-white">0</p>
+        <p class="text-[10px] text-slate-500 mt-1">Perlu dikirim segera</p>
+      </div>
+      <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
+        <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Sedang Dikirim</p>
+        <p id="kpiDikirim" class="text-2xl font-black mt-2 text-white">0</p>
+        <p class="text-[10px] text-slate-500 mt-1">Menunggu diterima PIC Dapur</p>
+      </div>
+      <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
+        <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Pesanan Selesai</p>
+        <p id="kpiSelesai" class="text-2xl font-black mt-2 text-white">0</p>
+        <p class="text-[10px] text-slate-500 mt-1">Barang sudah masuk stok dapur</p>
+      </div>
+    </section>
+
+    <!-- Main Content Area -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Orders List (Left) -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-md font-black text-white">Daftar Antrean Pesanan Kulakan Dapur</h2>
+          <span id="orderCountLabel" class="text-[10px] font-bold bg-slate-800 px-2 py-1 rounded text-slate-300">0 Pesanan</span>
+        </div>
+        
+        <div id="orderListContainer" class="space-y-4">
+          <!-- JS will render orders here -->
+          <div class="glass rounded-2xl p-8 text-center text-xs text-slate-500">
+            Mengambil data antrean pesanan...
+          </div>
+        </div>
+      </div>
+
+      <!-- Cooperative Catalog & Inventory (Right) -->
+      <div class="space-y-4">
+        <h2 class="text-md font-black text-white">Daftar Harga & Katalog Koperasi</h2>
+        <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900">
+          <div id="catalogList" class="space-y-3 divide-y divide-slate-900">
+            <!-- JS will render catalog here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = window.location.origin;
+    let allOrders = [];
+
+    // Helper formatting Rupiah
+    function formatRp(value) {
+      return 'Rp ' + Number(value || 0).toLocaleString('id-ID');
+    }
+
+    async function loadOrders() {
+      try {
+        // Fetch Orders
+        const ordRes = await fetch(`${API_BASE}/api/koperasi/order`);
+        const ordData = await ordRes.json();
+        allOrders = ordData.success ? ordData.data : [];
+
+        // Fetch Catalog
+        const catRes = await fetch(`${API_BASE}/api/koperasi/katalog`);
+        const catData = await catRes.json();
+        const catalog = catData.success ? catData.data : [];
+
+        renderCatalog(catalog);
+        renderKPIs();
+        filterOrders();
+      } catch (err) {
+        console.error('Gagal mengambil data koperasi:', err);
+      }
+    }
+
+    function renderCatalog(catalog) {
+      const container = document.getElementById('catalogList');
+      if (!catalog.length) {
+        container.innerHTML = `<p class="text-xs text-slate-500 text-center py-4">Katalog kosong.</p>`;
+        return;
+      }
+
+      container.innerHTML = catalog.map((item, idx) => `
+        <div class="flex justify-between items-center py-2.5 ${idx > 0 ? 'border-t border-slate-800' : ''}">
+          <div>
+            <p class="text-xs font-black text-slate-200">${item.namaBarang}</p>
+            <p class="text-[9px] text-slate-500 font-bold">Kode: ${item.id}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs font-black text-emerald-400">${formatRp(item.hargaSatuan)}</p>
+            <p class="text-[9px] text-slate-500 font-bold">per ${item.satuan}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderKPIs() {
+      const omset = allOrders
+        .filter(o => o.status === 'SELESAI' || o.status === 'DIKIRIM')
+        .reduce((sum, o) => sum + o.totalHarga, 0);
+      
+      const pending = allOrders.filter(o => o.status === 'PENDING').length;
+      const dikirim = allOrders.filter(o => o.status === 'DIKIRIM').length;
+      const selesai = allOrders.filter(o => o.status === 'SELESAI').length;
+
+      document.getElementById('kpiOmset').innerText = formatRp(omset);
+      document.getElementById('kpiPending').innerText = pending;
+      document.getElementById('kpiDikirim').innerText = dikirim;
+      document.getElementById('kpiSelesai').innerText = selesai;
+    }
+
+    function filterOrders() {
+      const filterStatus = document.getElementById('statusFilter').value;
+      let filtered = allOrders;
+
+      if (filterStatus !== 'ALL') {
+        filtered = allOrders.filter(o => o.status === filterStatus);
+      }
+
+      document.getElementById('orderCountLabel').innerText = `${filtered.length} Pesanan`;
+      renderOrders(filtered);
+    }
+
+    function renderOrders(orders) {
+      const container = document.getElementById('orderListContainer');
+      if (!orders.length) {
+        container.innerHTML = `
+          <div class="glass rounded-2xl p-8 text-center text-xs text-slate-500">
+            Tidak ada antrean pesanan kulakan saat ini.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = orders.map(order => {
+        let statusBadge = '';
+        let actionBtn = '';
+
+        if (order.status === 'PENDING') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">BARU (PENDING)</span>';
+          actionBtn = `
+            <button onclick="shipOrder('${order.id}')" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl shadow-lg transition-all">
+              Kirim Barang
+            </button>
+          `;
+        } else if (order.status === 'DIKIRIM') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/20">SEDANG DIKIRIM</span>';
+          actionBtn = '<span class="text-[10px] text-slate-400 italic">Menunggu konfirmasi penerimaan oleh PIC Dapur...</span>';
+        } else if (order.status === 'SELESAI') {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">SELESAI</span>';
+          actionBtn = '<span class="text-[10px] text-emerald-400 font-bold">✓ Barang sudah masuk stok gudang dapur</span>';
+        }
+
+        const dateStr = new Date(order.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+
+        return `
+          <div class="glass rounded-2xl p-5 shadow-sm border border-slate-900 space-y-4">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-900 pb-3">
+              <div>
+                <span class="text-[9px] font-bold text-slate-500 tracking-wider">ID ORDER: ${order.id}</span>
+                <h3 class="text-sm font-black text-white mt-0.5">${order.namaDapur}</h3>
+                <p class="text-[10px] text-slate-400">${dateStr}</p>
+              </div>
+              <div>
+                ${statusBadge}
+              </div>
+            </div>
+
+            <!-- Items -->
+            <div class="space-y-2">
+              ${order.items.map(item => `
+                <div class="flex justify-between items-center text-xs text-slate-300">
+                  <span>${item.namaBarang} (${item.qty} ${item.satuan})</span>
+                  <span class="font-bold text-slate-200">${formatRp(item.total)}</span>
+                </div>
+              `).join('')}
+            </div>
+
+            <!-- Total Pricing -->
+            <div class="flex justify-between items-center border-t border-slate-900 pt-3">
+              <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Tagihan</span>
+              <span class="text-sm font-black text-emerald-400">${formatRp(order.totalHarga)}</span>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end pt-2 border-t border-slate-900/50">
+              ${actionBtn}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function shipOrder(orderId) {
+      if (!confirm('Kirim pesanan kulakan ini ke Dapur terkait?')) return;
+      try {
+        const response = await fetch(`${API_BASE}/api/koperasi/order/${orderId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'DIKIRIM' })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('Barang dalam status pengiriman!');
+          loadOrders();
+        } else {
+          alert('Gagal mengirim pesanan: ' + data.message);
+        }
+      } catch (err) {
+        alert('Gagal memproses pengiriman: ' + err.message);
+      }
+    }
+
+    // Load initial data
+    loadOrders();
+    // Poll updates every 10 seconds
+    setInterval(loadOrders, 10000);
+  </script>
+</body>
+</html>

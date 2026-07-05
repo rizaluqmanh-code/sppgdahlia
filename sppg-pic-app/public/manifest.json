@@ -1,0 +1,21 @@
+{
+  "short_name": "SPPG PIC",
+  "name": "SPPG Dapur PIC App",
+  "icons": [
+    {
+      "src": "/mobile/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/mobile/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/mobile/",
+  "background_color": "#090d16",
+  "theme_color": "#047857",
+  "display": "standalone",
+  "orientation": "portrait"
+}

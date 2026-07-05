@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPPG Control Suite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+  <main class="w-full max-w-3xl">
+    <p class="text-xs font-black uppercase tracking-[0.24em] text-emerald-400">SPPG Control Suite</p>
+    <h1 class="text-4xl md:text-5xl font-black mt-3 leading-tight">Kontrol dapur MBG dari input spreadsheet sampai audit Yayasan.</h1>
+    <p class="text-slate-300 mt-4 max-w-2xl">
+      Data RAB masuk ke aplikasi PIC, divalidasi dengan foto per bahan, lalu dikirim ke dashboard Yayasan untuk hitung HPP,
+      potensi mark up, dan persentase belanja dari koperasi.
+    </p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
+      <a href="/mobile" class="bg-emerald-600 hover:bg-emerald-500 rounded-2xl p-5 shadow-lg">
+        <p class="text-sm font-black">Mobile PIC Dapur</p>
+        <p class="text-xs text-emerald-50 mt-2">Login demo: username demo, password demo. Isi laporan dan foto bukti.</p>
+      </a>
+      <a href="/admin.html" class="bg-white hover:bg-slate-100 text-slate-950 rounded-2xl p-5 shadow-lg">
+        <p class="text-sm font-black">Dashboard Yayasan</p>
+        <p class="text-xs text-slate-600 mt-2">Pantau laporan masuk, rasio koperasi, HPP, dan temuan audit.</p>
+      </a>
+    </div>
+
+    <div class="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <p class="text-xs font-black text-slate-300">Cara jalan lokal</p>
+      <p class="text-xs text-slate-400 mt-2 font-mono">npm start</p>
+      <p class="text-xs text-slate-500 mt-2">Backend melayani halaman ini, dashboard, API laporan, dan build mobile di /mobile.</p>
+    </div>
+  </main>
+</body>
+</html>
