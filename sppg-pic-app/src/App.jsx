@@ -834,13 +834,33 @@ function App() {
       const nextInput = { ...laporanInput };
       activeBomList.forEach((item, index) => {
         const key = buildRowKey(item, index);
+        const currentInput = nextInput[key] || {};
+        
+        let updatedReceipts = undefined;
+        if (currentInput.receipts && currentInput.receipts.length > 0) {
+          updatedReceipts = currentInput.receipts.map(r => ({
+            ...r,
+            foto: encoded
+          }));
+        } else {
+          updatedReceipts = [
+            {
+              id: 'REC-default',
+              qty: currentInput.qtyRiil !== undefined ? currentInput.qtyRiil : item.qtyRencana,
+              hargaSatuan: currentInput.hargaSatuanRiil !== undefined ? currentInput.hargaSatuanRiil : item.hargaRab,
+              foto: encoded
+            }
+          ];
+        }
+
         nextInput[key] = {
           qtyRiil: item.qtyRencana,
           hargaSatuanRiil: item.hargaRab,
           totalRiil: item.qtyRencana * item.hargaRab,
           sumber: 'KOPERASI',
-          ...nextInput[key],
-          fotoNota: encoded
+          ...currentInput,
+          fotoNota: JSON.stringify(updatedReceipts),
+          receipts: updatedReceipts
         };
       });
       setLaporanInput(nextInput);
@@ -854,22 +874,58 @@ function App() {
     if (checked) {
       let firstPhoto = null;
       for (const key of Object.keys(laporanInput)) {
-        if (laporanInput[key]?.fotoNota) {
-          firstPhoto = laporanInput[key].fotoNota;
+        const inp = laporanInput[key];
+        if (inp?.receipts && inp.receipts.length > 0 && inp.receipts[0].foto) {
+          firstPhoto = inp.receipts[0].foto;
+          break;
+        } else if (inp?.fotoNota) {
+          firstPhoto = inp.fotoNota;
           break;
         }
       }
       if (firstPhoto) {
+        // Jika berupa JSON string, coba ambil foto pertamanya
+        if (typeof firstPhoto === 'string' && firstPhoto.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(firstPhoto);
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].foto) {
+              firstPhoto = parsed[0].foto;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
         const nextInput = { ...laporanInput };
         activeBomList.forEach((item, index) => {
           const key = buildRowKey(item, index);
+          const currentInput = nextInput[key] || {};
+          
+          let updatedReceipts = undefined;
+          if (currentInput.receipts && currentInput.receipts.length > 0) {
+            updatedReceipts = currentInput.receipts.map(r => ({
+              ...r,
+              foto: firstPhoto
+            }));
+          } else {
+            updatedReceipts = [
+              {
+                id: 'REC-default',
+                qty: currentInput.qtyRiil !== undefined ? currentInput.qtyRiil : item.qtyRencana,
+                hargaSatuan: currentInput.hargaSatuanRiil !== undefined ? currentInput.hargaSatuanRiil : item.hargaRab,
+                foto: firstPhoto
+              }
+            ];
+          }
+
           nextInput[key] = {
             qtyRiil: item.qtyRencana,
             hargaSatuanRiil: item.hargaRab,
             totalRiil: item.qtyRencana * item.hargaRab,
             sumber: 'KOPERASI',
-            ...nextInput[key],
-            fotoNota: firstPhoto
+            ...currentInput,
+            fotoNota: JSON.stringify(updatedReceipts),
+            receipts: updatedReceipts
           };
         });
         setLaporanInput(nextInput);
@@ -892,14 +948,33 @@ function App() {
       const parts = key.split('_');
       const idx = Number(parts[0]);
       const item = activeBomList[idx] || {};
+      const currentInput = nextInput[key] || {};
+
+      let updatedReceipts = undefined;
+      if (currentInput.receipts && currentInput.receipts.length > 0) {
+        updatedReceipts = currentInput.receipts.map(r => ({
+          ...r,
+          foto: encoded
+        }));
+      } else {
+        updatedReceipts = [
+          {
+            id: 'REC-default',
+            qty: currentInput.qtyRiil !== undefined ? currentInput.qtyRiil : item.qtyRencana,
+            hargaSatuan: currentInput.hargaSatuanRiil !== undefined ? currentInput.hargaSatuanRiil : item.hargaRab,
+            foto: encoded
+          }
+        ];
+      }
 
       nextInput[key] = {
         qtyRiil: item.qtyRencana || '',
         hargaSatuanRiil: item.hargaRab || '',
         totalRiil: (item.qtyRencana || 0) * (item.hargaRab || 0),
         sumber: 'KOPERASI',
-        ...nextInput[key],
-        fotoNota: encoded
+        ...currentInput,
+        fotoNota: JSON.stringify(updatedReceipts),
+        receipts: updatedReceipts
       };
     });
 
