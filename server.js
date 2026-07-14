@@ -16,6 +16,11 @@ try {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sppg_super_secret_key_13579';
 
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sppgadmin';
+const KOPERASI_USERNAME = process.env.KOPERASI_USERNAME || 'koperasi';
+const KOPERASI_PASSWORD = process.env.KOPERASI_PASSWORD || 'sppgkoperasi';
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -50,14 +55,14 @@ let laporanStore = [];
 let orderStore = [];
 let gudangStokStore = [];
 let koperasiKatalog = [
-  { id: 'KOP-01', namaBarang: 'Beras Medium', satuan: 'Kg', hargaSatuan: 14000 },
-  { id: 'KOP-02', namaBarang: 'Telur Ayam', satuan: 'Kg', hargaSatuan: 26000 },
-  { id: 'KOP-03', namaBarang: 'Minyak Goreng Sunco 2L', satuan: 'Pcs', hargaSatuan: 38000 },
-  { id: 'KOP-04', namaBarang: 'Bawang Merah Kupas', satuan: 'Kg', hargaSatuan: 45000 },
-  { id: 'KOP-05', namaBarang: 'Bawang Putih Kupas', satuan: 'Kg', hargaSatuan: 40000 },
-  { id: 'KOP-06', namaBarang: 'Garam Halus 250g', satuan: 'Bks', hargaSatuan: 2500 },
-  { id: 'KOP-07', namaBarang: 'Merica Bubuk Ladaku', satuan: 'Pcs', hargaSatuan: 1500 },
-  { id: 'KOP-08', namaBarang: 'Saos Tiram Saori', satuan: 'Botol', hargaSatuan: 12000 },
+  { id: 'KOP-01', namaBarang: 'Beras Medium', satuan: 'Kg', hargaSatuan: 14000, sku: 'BRS-MED-01', stok: 500 },
+  { id: 'KOP-02', namaBarang: 'Telur Ayam', satuan: 'Kg', hargaSatuan: 26000, sku: 'TLR-AYM-02', stok: 350 },
+  { id: 'KOP-03', namaBarang: 'Minyak Goreng Sunco 2L', satuan: 'Pcs', hargaSatuan: 38000, sku: 'MNG-SNC-03', stok: 200 },
+  { id: 'KOP-04', namaBarang: 'Bawang Merah Kupas', satuan: 'Kg', hargaSatuan: 45000, sku: 'BWG-MRH-04', stok: 150 },
+  { id: 'KOP-05', namaBarang: 'Bawang Putih Kupas', satuan: 'Kg', hargaSatuan: 40000, sku: 'BWG-PTH-05', stok: 180 },
+  { id: 'KOP-06', namaBarang: 'Garam Halus 250g', satuan: 'Bks', hargaSatuan: 2500, sku: 'GRM-HLS-06', stok: 1000 },
+  { id: 'KOP-07', namaBarang: 'Merica Bubuk Ladaku', satuan: 'Pcs', hargaSatuan: 1500, sku: 'MRC-LDK-07', stok: 800 },
+  { id: 'KOP-08', namaBarang: 'Saos Tiram Saori', satuan: 'Botol', hargaSatuan: 12000, sku: 'SAS-TRM-08', stok: 450 },
 ];
 
 const dapurStore = Array.from({ length: 30 }, (_, index) => {
@@ -174,6 +179,49 @@ async function initDb() {
       );
     `);
 
+    // Migrasi otomatis: Tambah kolom alamat, email, no_wa ke tabel dapur jika belum ada
+    await client.query(`
+      ALTER TABLE dapur ADD COLUMN IF NOT EXISTS alamat TEXT;
+      ALTER TABLE dapur ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+      ALTER TABLE dapur ADD COLUMN IF NOT EXISTS no_wa VARCHAR(100);
+    `);
+
+    // Migrasi otomatis: Tambah kolom bukti_pembayaran jika belum ada
+    await client.query(`
+      ALTER TABLE koperasi_order ADD COLUMN IF NOT EXISTS bukti_pembayaran TEXT;
+    `);
+
+    // Migrasi otomatis: Tambah kolom hari_kirim dan tanggal_kirim jika belum ada
+    await client.query(`
+      ALTER TABLE koperasi_order ADD COLUMN IF NOT EXISTS hari_kirim VARCHAR(50);
+      ALTER TABLE koperasi_order ADD COLUMN IF NOT EXISTS tanggal_kirim DATE;
+    `);
+
+    // Migrasi otomatis: Tambah kolom sku dan stok ke koperasi_katalog jika belum ada
+    await client.query(`
+      ALTER TABLE koperasi_katalog ADD COLUMN IF NOT EXISTS sku VARCHAR(100);
+      ALTER TABLE koperasi_katalog ADD COLUMN IF NOT EXISTS stok NUMERIC DEFAULT 0;
+      ALTER TABLE koperasi_katalog ADD COLUMN IF NOT EXISTS foto TEXT;
+    `);
+
+    // Update SKU dan stok untuk data default jika masih kosong
+    await client.query(`
+      UPDATE koperasi_katalog SET sku = 'BRS-MED-01', stok = 500 WHERE nama_barang = 'Beras Medium' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'TLR-AYM-02', stok = 350 WHERE nama_barang = 'Telur Ayam' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'MNG-SNC-03', stok = 200 WHERE nama_barang = 'Minyak Goreng Sunco 2L' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'BWG-MRH-04', stok = 150 WHERE nama_barang = 'Bawang Merah Kupas' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'BWG-PTH-05', stok = 180 WHERE nama_barang = 'Bawang Putih Kupas' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'GRM-HLS-06', stok = 1000 WHERE nama_barang = 'Garam Halus 250g' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'MRC-LDK-07', stok = 800 WHERE nama_barang = 'Merica Bubuk Ladaku' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'SAS-TRM-08', stok = 450 WHERE nama_barang = 'Saos Tiram Saori' AND (sku IS NULL OR sku = '');
+      UPDATE koperasi_katalog SET sku = 'SKU-GEN-' || id, stok = 100 WHERE sku IS NULL OR sku = '';
+    `);
+
+    // Migrasi otomatis: Ubah status PENDING lama ke PENDING_PAYMENT
+    await client.query(`
+      UPDATE koperasi_order SET status = 'PENDING_PAYMENT' WHERE status = 'PENDING';
+    `);
+
     // Seed default dapur jika tabel dapur kosong
     const countDapurRes = await client.query('SELECT COUNT(*) FROM dapur');
     if (parseInt(countDapurRes.rows[0].count, 10) === 0) {
@@ -191,8 +239,8 @@ async function initDb() {
     if (parseInt(countRes.rows[0].count, 10) === 0) {
       for (const item of koperasiKatalog) {
         await client.query(
-          'INSERT INTO koperasi_katalog (id, nama_barang, satuan, harga_satuan) VALUES ($1, $2, $3, $4)',
-          [item.id, item.namaBarang, item.satuan, item.hargaSatuan]
+          'INSERT INTO koperasi_katalog (id, nama_barang, satuan, harga_satuan, sku, stok) VALUES ($1, $2, $3, $4, $5, $6)',
+          [item.id, item.namaBarang, item.satuan, item.hargaSatuan, item.sku, item.stok]
         );
       }
       console.log('🌱 Seed data katalog koperasi berhasil dimasukkan ke database.');
@@ -262,6 +310,40 @@ function authenticateToken(req, res, next) {
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       return res.status(403).json({ success: false, error: 'Sesi kedaluwarsa atau token tidak valid. Silakan login ulang.' });
+    }
+    req.user = decoded;
+    next();
+  });
+}
+
+function authenticateAdmin(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Token autentikasi tidak ditemukan. Silakan login kembali.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err || decoded.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Akses ditolak. Halaman khusus Administrator Yayasan.' });
+    }
+    req.user = decoded;
+    next();
+  });
+}
+
+function authenticateKoperasiOrAdmin(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Token autentikasi tidak ditemukan. Silakan login kembali.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err || (decoded.role !== 'koperasi' && decoded.role !== 'admin')) {
+      return res.status(403).json({ success: false, error: 'Akses ditolak. Halaman khusus Koperasi / Admin.' });
     }
     req.user = decoded;
     next();
@@ -479,6 +561,30 @@ app.post('/api/auth/login', async (req, res) => {
   const username = String(req.body?.username || '').toLowerCase().trim();
   const password = String(req.body?.password || '');
 
+  // 1. Cek Login Admin
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    const safeAdmin = { id: 'ADMIN', username: 'admin', nama: 'Administrator Yayasan', role: 'admin' };
+    const token = jwt.sign(safeAdmin, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({
+      success: true,
+      message: 'Login Admin Berhasil.',
+      token,
+      data: safeAdmin,
+    });
+  }
+
+  // 2. Cek Login Koperasi
+  if (username === KOPERASI_USERNAME && password === KOPERASI_PASSWORD) {
+    const safeKoperasi = { id: 'KOPERASI', username: 'koperasi', nama: 'Admin Koperasi', role: 'koperasi' };
+    const token = jwt.sign(safeKoperasi, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({
+      success: true,
+      message: 'Login Koperasi Berhasil.',
+      token,
+      data: safeKoperasi,
+    });
+  }
+
   let dapur = null;
   if (dbActive) {
     try {
@@ -523,7 +629,85 @@ app.post('/api/auth/login', async (req, res) => {
   });
 });
 
-app.put('/api/dapur/:id', async (req, res) => {
+app.put('/api/dapur/profile/password', authenticateToken, async (req, res) => {
+  const { passwordBaru } = req.body;
+  const idDapur = req.user.id;
+
+  if (!passwordBaru || passwordBaru.trim().length < 4) {
+    return res.status(400).json({ success: false, message: 'Password baru minimal 4 karakter.' });
+  }
+
+  if (!dbActive) {
+    const idx = dapurStore.findIndex(d => d.id === idDapur);
+    if (idx !== -1) {
+      dapurStore[idx].password = passwordBaru;
+      return res.json({ success: true, message: 'Password berhasil diubah (in-memory).' });
+    }
+    return res.status(404).json({ success: false, message: 'Dapur tidak ditemukan.' });
+  }
+
+  try {
+    await pool.query(
+      `UPDATE dapur 
+       SET password = $1
+       WHERE id = $2`,
+      [passwordBaru, idDapur]
+    );
+    res.json({ success: true, message: 'Password berhasil diperbarui.' });
+  } catch (err) {
+    console.error('❌ Gagal memperbarui password dapur:', err.message);
+    res.status(500).json({ success: false, message: 'Gagal memperbarui password ke database.' });
+  }
+});
+
+app.put('/api/dapur/profile', authenticateToken, async (req, res) => {
+  const { nama, alamat, email, noWa } = req.body;
+  const idDapur = req.user.id;
+
+  if (!dbActive) {
+    const idx = dapurStore.findIndex(d => d.id === idDapur);
+    if (idx !== -1) {
+      if (nama) dapurStore[idx].nama = nama;
+      dapurStore[idx].alamat = alamat || '';
+      dapurStore[idx].email = email || '';
+      dapurStore[idx].no_wa = noWa || '';
+      
+      const safeDapur = publicDapur(dapurStore[idx]);
+      return res.json({ 
+        success: true, 
+        message: 'Profil berhasil diperbarui (in-memory).',
+        data: safeDapur
+      });
+    }
+    return res.status(404).json({ success: false, message: 'Dapur tidak ditemukan.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE dapur 
+       SET nama = COALESCE(NULLIF($1, ''), nama), alamat = $2, email = $3, no_wa = $4
+       WHERE id = $5
+       RETURNING *`,
+      [nama || '', alamat || '', email || '', noWa || '', idDapur]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Dapur tidak ditemukan.' });
+    }
+
+    const safeDapur = publicDapur(result.rows[0]);
+    res.json({ 
+      success: true, 
+      message: 'Profil berhasil diperbarui.',
+      data: safeDapur
+    });
+  } catch (err) {
+    console.error('❌ Gagal memperbarui profil dapur:', err.message);
+    res.status(500).json({ success: false, message: 'Gagal memperbarui profil ke database.' });
+  }
+});
+
+app.put('/api/dapur/:id', authenticateAdmin, async (req, res) => {
   const { id } = req.params;
   const { nama, username, password, targetPorsi, batasAnggaran } = req.body;
 
@@ -656,7 +840,26 @@ app.post('/api/laporan', authenticateToken, async (req, res) => {
   const processedItems = items.map((item, index) => {
     if (item.fotoNota) {
       const sanitizedItemName = String(item.namaBarang).replace(/[^a-zA-Z0-9_-]/g, '_');
-      item.fotoNota = saveBase64Image(item.fotoNota, `nota-${laporanId}-${index}-${sanitizedItemName}`);
+      
+      // Cek apakah fotoNota berupa JSON array string (multiple receipts)
+      if (typeof item.fotoNota === 'string' && item.fotoNota.startsWith('[')) {
+        try {
+          const receipts = JSON.parse(item.fotoNota);
+          if (Array.isArray(receipts)) {
+            const processedReceipts = receipts.map((r, rIdx) => {
+              if (r.foto) {
+                r.foto = saveBase64Image(r.foto, `nota-${laporanId}-${index}-rec-${rIdx}-${sanitizedItemName}`);
+              }
+              return r;
+            });
+            item.fotoNota = JSON.stringify(processedReceipts);
+          }
+        } catch (err) {
+          console.error('⚠️ Gagal memproses JSON fotoNota:', err.message);
+        }
+      } else {
+        item.fotoNota = saveBase64Image(item.fotoNota, `nota-${laporanId}-${index}-${sanitizedItemName}`);
+      }
     }
     return item;
   });
@@ -788,8 +991,8 @@ app.post('/api/laporan', authenticateToken, async (req, res) => {
     }
   }
 
-  // INTEGRASI KLED0: Otomatis sinkronisasi biaya belanja ke Kledo di background
-  syncToKledo(laporan);
+  // INTEGRASI KLED0: Otomatis sinkronisasi biaya belanja ke Kledo di background (DISEBUTKAN UNTUK DISAMPINGKAN DULU)
+  // syncToKledo(laporan);
 
   res.status(201).json({
     success: true,
@@ -922,17 +1125,115 @@ async function syncToKledo(laporan) {
   }
 }
 
-app.get('/api/laporan', async (req, res) => {
+async function syncKoperasiOrderToKledo(order) {
+  const kledoUrl = process.env.KLEDO_API_URL;
+  const kledoToken = process.env.KLEDO_API_TOKEN;
+  const kledoRevenueAccountId = process.env.KLEDO_REVENUE_ACCOUNT_ID || 121;
+
+  if (!kledoUrl || !kledoToken) {
+    console.log('ℹ️ [Kledo Koperasi Sync] Dilewati. Lengkapi KLEDO_API_URL dan TOKEN di file .env untuk mengaktifkan.');
+    return { success: false, reason: 'Config missing' };
+  }
+
+  const namaDapurTag = order.namaDapur || 'Dapur SPPG';
+  console.log(`⏳ [Kledo Koperasi Sync] Memulai sinkronisasi tagihan koperasi untuk ${namaDapurTag} senilai Rp ${order.totalHarga.toLocaleString('id-ID')}...`);
+
+  try {
+    // 1. Cari contact (customer) berdasarkan nama dapur di Kledo
+    const getContactRes = await fetch(`${kledoUrl}/finance/contacts?per_page=10&search=${encodeURIComponent(namaDapurTag)}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': kledoToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    let contactId = null;
+    if (getContactRes.ok) {
+      const getContactJson = await getContactRes.json();
+      if (getContactJson.success && getContactJson.data && Array.isArray(getContactJson.data.data)) {
+        const found = getContactJson.data.data.find(c => c.name.toLowerCase().trim() === namaDapurTag.toLowerCase().trim());
+        if (found) {
+          contactId = found.id;
+        }
+      }
+    }
+
+    // 2. Jika contact dapur belum ada di Kledo, buat secara otomatis
+    if (!contactId) {
+      console.log(`🌱 [Kledo Koperasi Sync] Contact "${namaDapurTag}" belum terdaftar. Mendaftarkan contact baru di Kledo...`);
+      const createContactRes = await fetch(`${kledoUrl}/finance/contacts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': kledoToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: namaDapurTag, type_ids: [3] }) // type_id 3 = customer
+      });
+      if (createContactRes.ok) {
+        const createContactJson = await createContactRes.json();
+        if (createContactJson.success && createContactJson.data) {
+          contactId = createContactJson.data.id;
+          console.log(`✅ [Kledo Koperasi Sync] Contact baru berhasil didaftarkan dengan ID: ${contactId}`);
+        }
+      }
+    }
+
+    // Jika gagal mencari/membuat contact, gunakan POS Customer (ID: 1) sebagai fallback
+    if (!contactId) {
+      console.warn('⚠️ [Kledo Koperasi Sync] Gagal mendapatkan contact. Menggunakan POS Customer (ID: 1) sebagai fallback...');
+      contactId = 1;
+    }
+
+    // 3. Susun payload invoice penjualan (Sales Invoice)
+    const dateOnly = order.createdAt ? order.createdAt.split('T')[0] : new Date().toISOString().split('T')[0];
+    const payload = {
+      contact_id: Number(contactId),
+      trans_date: dateOnly,
+      due_date: dateOnly,
+      is_paid: false, // Tagihan belum dibayar (Accounts Receivable)
+      memo: `Pesanan Kulakan Koperasi ${order.namaDapur} (ORD: ${order.id})`,
+      items: order.items.map(item => ({
+        finance_account_id: Number(kledoRevenueAccountId),
+        amount: item.total,
+        description: `${item.namaBarang} - ${item.qty} ${item.satuan} @ Rp ${item.hargaSatuan.toLocaleString('id-ID')}`
+      }))
+    };
+
+    const response = await fetch(`${kledoUrl}/finance/invoices`, {
+      method: 'POST',
+      headers: {
+        'Authorization': kledoToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    if (response.ok && result.success) {
+      console.log(`✅ [Kledo Koperasi Sync] Invoice berhasil dibuat di Kledo dengan ID: ${result.data.id}`);
+      return { success: true, id: result.data.id };
+    } else {
+      console.error('❌ [Kledo Koperasi Sync] Gagal membuat invoice di Kledo:', result);
+      return { success: false, error: result };
+    }
+  } catch (err) {
+    console.error('❌ [Kledo Koperasi Sync] Gagal selama proses sinkronisasi Kledo:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+app.get('/api/laporan', authenticateAdmin, async (req, res) => {
   const data = await filterLaporanByDapur(req.query.idDapur);
   res.json({ success: true, data });
 });
 
-app.get('/api/audit', async (req, res) => {
+app.get('/api/audit', authenticateAdmin, async (req, res) => {
   const reports = await filterLaporanByDapur(req.query.idDapur);
   res.json({ success: true, data: buildAudit(reports) });
 });
 
-app.get('/api/dashboard', async (_req, res) => {
+app.get('/api/dashboard', authenticateAdmin, async (_req, res) => {
   const reports = await filterLaporanByDapur('ALL');
   const summaries = await buildDapurSummary();
   res.json({
@@ -948,7 +1249,7 @@ app.get('/api/dashboard', async (_req, res) => {
 // =========================================================================
 // KLEDO AUDIT & DASHBOARD APIS
 // =========================================================================
-app.get('/api/kledo/dashboard', async (req, res) => {
+app.get('/api/kledo/dashboard', authenticateAdmin, async (req, res) => {
   const kledoUrl = process.env.KLEDO_API_URL;
   const kledoToken = process.env.KLEDO_API_TOKEN;
 
@@ -1062,7 +1363,7 @@ app.get('/api/kledo/dashboard', async (req, res) => {
   }
 });
 
-app.post('/api/kledo/sync-laporan/:laporanId', async (req, res) => {
+app.post('/api/kledo/sync-laporan/:laporanId', authenticateAdmin, async (req, res) => {
   const { laporanId } = req.params;
   const kledoUrl = process.env.KLEDO_API_URL;
   const kledoToken = process.env.KLEDO_API_TOKEN;
@@ -1242,7 +1543,10 @@ app.get('/api/koperasi/katalog', async (_req, res) => {
         id: row.id,
         namaBarang: row.nama_barang,
         satuan: row.satuan,
-        hargaSatuan: Number(row.harga_satuan)
+        hargaSatuan: Number(row.harga_satuan),
+        sku: row.sku || '',
+        stok: Number(row.stok || 0),
+        foto: row.foto || null
       }));
       return res.json({ success: true, data });
     } catch (err) {
@@ -1252,15 +1556,23 @@ app.get('/api/koperasi/katalog', async (_req, res) => {
   res.json({ success: true, data: koperasiKatalog });
 });
 
-app.post('/api/koperasi/katalog', async (req, res) => {
-  const { namaBarang, satuan, hargaSatuan } = req.body;
+app.post('/api/koperasi/katalog', authenticateKoperasiOrAdmin, async (req, res) => {
+  const { namaBarang, satuan, hargaSatuan, sku, stok, foto } = req.body;
   if (!namaBarang || !satuan || !hargaSatuan) {
     return res.status(400).json({ success: false, message: 'Data produk tidak lengkap.' });
   }
 
   const cleanNama = String(namaBarang).trim();
   const cleanSatuan = String(satuan).trim();
+  const cleanSku = String(sku || '').trim() || `SKU-GEN-${Date.now().toString().slice(-6)}`;
   const numHarga = toNumber(hargaSatuan);
+  const numStok = toNumber(stok || 0);
+
+  // Simpan foto jika ada
+  let savedFoto = null;
+  if (foto) {
+    savedFoto = saveBase64Image(foto, `produk-${cleanSku}`);
+  }
 
   if (dbActive) {
     try {
@@ -1268,8 +1580,8 @@ app.post('/api/koperasi/katalog', async (req, res) => {
       const newId = `KOP-${String(parseInt(countRes.rows[0].count, 10) + 1).padStart(2, '0')}-${Date.now().toString().slice(-4)}`;
       
       const insertRes = await pool.query(
-        'INSERT INTO koperasi_katalog (id, nama_barang, satuan, harga_satuan) VALUES ($1, $2, $3, $4) RETURNING *',
-        [newId, cleanNama, cleanSatuan, numHarga]
+        'INSERT INTO koperasi_katalog (id, nama_barang, satuan, harga_satuan, sku, stok, foto) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [newId, cleanNama, cleanSatuan, numHarga, cleanSku, numStok, savedFoto]
       );
       
       const row = insertRes.rows[0];
@@ -1280,7 +1592,10 @@ app.post('/api/koperasi/katalog', async (req, res) => {
           id: row.id,
           namaBarang: row.nama_barang,
           satuan: row.satuan,
-          hargaSatuan: Number(row.harga_satuan)
+          hargaSatuan: Number(row.harga_satuan),
+          sku: row.sku || '',
+          stok: Number(row.stok || 0),
+          foto: row.foto || null
         }
       });
     } catch (err) {
@@ -1293,13 +1608,86 @@ app.post('/api/koperasi/katalog', async (req, res) => {
     id: `KOP-${String(koperasiKatalog.length + 1).padStart(2, '0')}-${Date.now().toString().slice(-4)}`,
     namaBarang: cleanNama,
     satuan: cleanSatuan,
-    hargaSatuan: numHarga
+    hargaSatuan: numHarga,
+    sku: cleanSku,
+    stok: numStok,
+    foto: savedFoto
   };
   koperasiKatalog.push(newProduct);
   res.status(201).json({ success: true, message: 'Produk berhasil diunggah.', data: newProduct });
 });
 
-app.delete('/api/koperasi/katalog/:id', async (req, res) => {
+// Endpoint baru: PUT /api/koperasi/katalog/:id (Edit produk)
+app.put('/api/koperasi/katalog/:id', authenticateKoperasiOrAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { namaBarang, satuan, hargaSatuan, sku, stok, foto } = req.body;
+
+  if (!namaBarang || !satuan || !hargaSatuan) {
+    return res.status(400).json({ success: false, message: 'Data produk tidak lengkap.' });
+  }
+
+  const cleanNama = String(namaBarang).trim();
+  const cleanSatuan = String(satuan).trim();
+  const cleanSku = String(sku || '').trim();
+  const numHarga = toNumber(hargaSatuan);
+  const numStok = toNumber(stok || 0);
+
+  let finalFoto = foto || null;
+  if (foto && foto.startsWith('data:image')) {
+    finalFoto = saveBase64Image(foto, `produk-${cleanSku}`);
+  }
+
+  if (dbActive) {
+    try {
+      const updateRes = await pool.query(
+        `UPDATE koperasi_katalog 
+         SET nama_barang = $1, satuan = $2, harga_satuan = $3, sku = $4, stok = $5, foto = COALESCE($6, foto) 
+         WHERE id = $7 RETURNING *`,
+        [cleanNama, cleanSatuan, numHarga, cleanSku, numStok, finalFoto, id]
+      );
+      if (updateRes.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' });
+      }
+      const row = updateRes.rows[0];
+      return res.json({
+        success: true,
+        message: 'Produk berhasil diperbarui.',
+        data: {
+          id: row.id,
+          namaBarang: row.nama_barang,
+          satuan: row.satuan,
+          hargaSatuan: Number(row.harga_satuan),
+          sku: row.sku || '',
+          stok: Number(row.stok || 0),
+          foto: row.foto || null
+        }
+      });
+    } catch (err) {
+      console.error('❌ Gagal mengedit katalog di DB:', err.message);
+      return res.status(500).json({ success: false, message: 'Gagal memperbarui produk.' });
+    }
+  }
+
+  // Fallback in-memory
+  const idx = koperasiKatalog.findIndex(item => item.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' });
+  }
+  
+  koperasiKatalog[idx] = {
+    ...koperasiKatalog[idx],
+    namaBarang: cleanNama,
+    satuan: cleanSatuan,
+    hargaSatuan: numHarga,
+    sku: cleanSku,
+    stok: numStok,
+    foto: finalFoto || koperasiKatalog[idx].foto
+  };
+
+  res.json({ success: true, message: 'Produk berhasil diperbarui.', data: koperasiKatalog[idx] });
+});
+
+app.delete('/api/koperasi/katalog/:id', authenticateKoperasiOrAdmin, async (req, res) => {
   const { id } = req.params;
 
   if (dbActive) {
@@ -1324,8 +1712,14 @@ app.delete('/api/koperasi/katalog/:id', async (req, res) => {
   res.json({ success: true, message: 'Produk berhasil dihapus.' });
 });
 
-app.post('/api/koperasi/order', async (req, res) => {
-  const { idDapur, namaDapur, items } = req.body;
+app.post('/api/koperasi/order', authenticateToken, async (req, res) => {
+  let { idDapur, namaDapur, items, hariKirim, tanggalKirim } = req.body;
+
+  // Keamanan: Paksa agar idDapur sesuai dengan user yang terotentikasi jika bukan admin/koperasi
+  if (req.user.role !== 'admin' && req.user.role !== 'koperasi') {
+    idDapur = req.user.id;
+    namaDapur = req.user.nama;
+  }
   if (!idDapur || !items || !items.length) {
     return res.status(400).json({ success: false, message: 'Data pesanan tidak lengkap.' });
   }
@@ -1343,15 +1737,18 @@ app.post('/api/koperasi/order', async (req, res) => {
       total: toNumber(i.qty) * toNumber(i.hargaSatuan)
     })),
     totalHarga,
-    status: 'PENDING',
+    status: 'PENDING_PAYMENT',
+    buktiPembayaran: null,
+    hariKirim: hariKirim || null,
+    tanggalKirim: tanggalKirim || null,
     createdAt: new Date().toISOString()
   };
 
   if (dbActive) {
     try {
       await pool.query(
-        'INSERT INTO koperasi_order (id, id_dapur, nama_dapur, total_harga, status, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
-        [order.id, order.idDapur, order.namaDapur, order.totalHarga, order.status, order.createdAt]
+        'INSERT INTO koperasi_order (id, id_dapur, nama_dapur, total_harga, status, created_at, hari_kirim, tanggal_kirim) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [order.id, order.idDapur, order.namaDapur, order.totalHarga, order.status, order.createdAt, order.hariKirim, order.tanggalKirim]
       );
 
       for (const item of order.items) {
@@ -1360,7 +1757,11 @@ app.post('/api/koperasi/order', async (req, res) => {
           [order.id, item.namaBarang, item.qty, item.satuan, item.hargaSatuan, item.total]
         );
       }
-      return res.json({ success: true, message: 'Pesanan kulakan berhasil dibuat.', data: order });
+
+      // Auto sync to Kledo Sales Invoice in the background (DISAMPINGKAN DULU)
+      // syncKoperasiOrderToKledo(order).catch(err => console.error('Background Kledo Sales Invoice Sync error:', err));
+
+      return res.json({ success: true, message: 'Pre Order Koperasi berhasil dibuat.', data: order });
     } catch (err) {
       console.error('❌ Gagal menyimpan order ke DB:', err.message);
     }
@@ -1368,11 +1769,127 @@ app.post('/api/koperasi/order', async (req, res) => {
 
   // Fallback in-memory
   orderStore.unshift(order);
-  res.json({ success: true, message: 'Pesanan kulakan berhasil dibuat.', data: order });
+  // syncKoperasiOrderToKledo(order).catch(err => console.error('Background Kledo Sales Invoice Sync error:', err));
+  res.json({ success: true, message: 'Pre Order Koperasi berhasil dibuat.', data: order });
 });
 
-app.get('/api/koperasi/order', async (req, res) => {
-  const { idDapur, status } = req.query;
+// Endpoint baru: Upload Bukti Pembayaran
+app.post('/api/koperasi/order/:id/pembayaran', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { buktiPembayaran } = req.body;
+
+  if (!buktiPembayaran) {
+    return res.status(400).json({ success: false, message: 'Bukti pembayaran tidak ditemukan.' });
+  }
+
+  let order = null;
+  if (dbActive) {
+    try {
+      const checkRes = await pool.query('SELECT * FROM koperasi_order WHERE id = $1', [id]);
+      if (checkRes.rows.length > 0) {
+        order = checkRes.rows[0];
+      }
+    } catch (dbErr) {
+      console.error(dbErr);
+    }
+  } else {
+    order = orderStore.find(o => o.id === id);
+  }
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
+  }
+
+  const orderDapurId = dbActive ? order.id_dapur : order.idDapur;
+  if (req.user.role !== 'admin' && req.user.role !== 'koperasi' && req.user.id !== orderDapurId) {
+    return res.status(403).json({ success: false, message: 'Akses ditolak.' });
+  }
+
+  const filename = saveBase64Image(buktiPembayaran, `bukti-bayar-${id}`);
+
+  if (dbActive) {
+    try {
+      await pool.query(
+        "UPDATE koperasi_order SET status = 'WAITING_APPROVAL', bukti_pembayaran = $1 WHERE id = $2",
+        [filename, id]
+      );
+    } catch (dbErr) {
+      console.error('Failed to update payment proof in DB:', dbErr);
+      return res.status(500).json({ success: false, message: 'Gagal memperbarui database.' });
+    }
+  } else {
+    order.buktiPembayaran = filename;
+    order.status = 'WAITING_APPROVAL';
+  }
+
+  res.json({
+    success: true,
+    message: 'Bukti pembayaran berhasil diunggah. Menunggu persetujuan Koperasi.',
+    buktiPembayaran: filename
+  });
+});
+
+// Endpoint baru: Upload Bukti Pembayaran Massal / Gabungan
+app.post('/api/koperasi/orders/pembayaran-massal', authenticateToken, async (req, res) => {
+  const { orderIds, buktiPembayaran } = req.body;
+
+  if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'Daftar order ID tidak valid.' });
+  }
+
+  if (!buktiPembayaran) {
+    return res.status(400).json({ success: false, message: 'Bukti pembayaran tidak ditemukan.' });
+  }
+
+  // Simpan foto bukti pembayaran menggunakan ID pertama sebagai penamaan file
+  const filename = saveBase64Image(buktiPembayaran, `bukti-bayar-massal-${orderIds[0]}`);
+
+  if (dbActive) {
+    try {
+      // Pastikan semua order milik dapur yang bersangkutan jika bukan admin/koperasi
+      if (req.user.role !== 'admin' && req.user.role !== 'koperasi') {
+        const checkRes = await pool.query(
+          'SELECT COUNT(*) FROM koperasi_order WHERE id = ANY($1) AND id_dapur = $2',
+          [orderIds, req.user.id]
+        );
+        if (parseInt(checkRes.rows[0].count, 10) !== orderIds.length) {
+          return res.status(403).json({ success: false, message: 'Ada pesanan yang bukan milik Dapur Anda atau tidak valid.' });
+        }
+      }
+
+      await pool.query(
+        "UPDATE koperasi_order SET status = 'WAITING_APPROVAL', bukti_pembayaran = $1 WHERE id = ANY($2)",
+        [filename, orderIds]
+      );
+    } catch (dbErr) {
+      console.error('Failed to update mass payment proof in DB:', dbErr);
+      return res.status(500).json({ success: false, message: 'Gagal memperbarui database.' });
+    }
+  } else {
+    // Fallback in-memory
+    orderIds.forEach(id => {
+      const order = orderStore.find(o => o.id === id);
+      if (order) {
+        order.buktiPembayaran = filename;
+        order.status = 'WAITING_APPROVAL';
+      }
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Bukti pembayaran gabungan berhasil diunggah. Menunggu persetujuan Koperasi.',
+    buktiPembayaran: filename
+  });
+});
+
+app.get('/api/koperasi/order', authenticateToken, async (req, res) => {
+  let { idDapur, status } = req.query;
+
+  // Keamanan: Jika bukan Admin/Koperasi, paksa agar hanya bisa melihat data miliknya sendiri
+  if (req.user.role !== 'admin' && req.user.role !== 'koperasi') {
+    idDapur = req.user.id;
+  }
 
   if (dbActive) {
     try {
@@ -1405,6 +1922,9 @@ app.get('/api/koperasi/order', async (req, res) => {
           namaDapur: row.nama_dapur,
           totalHarga: Number(row.total_harga),
           status: row.status,
+          buktiPembayaran: row.bukti_pembayaran || null,
+          hariKirim: row.hari_kirim || null,
+          tanggalKirim: row.tanggal_kirim ? new Date(row.tanggal_kirim).toISOString().split('T')[0] : null,
           createdAt: row.created_at.toISOString(),
           items: itemsRes.rows.map(item => ({
             namaBarang: item.nama_barang,
@@ -1430,22 +1950,69 @@ app.get('/api/koperasi/order', async (req, res) => {
   if (status) {
     filtered = filtered.filter(o => o.status === status);
   }
-  res.json({ success: true, data: filtered });
+  res.json({ success: true, data: filtered.map(o => ({
+    ...o,
+    buktiPembayaran: o.buktiPembayaran || null,
+    hariKirim: o.hariKirim || null,
+    tanggalKirim: o.tanggalKirim || null
+  })) });
 });
 
-app.post('/api/koperasi/order/:id/status', async (req, res) => {
+app.post('/api/koperasi/order/:id/status', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+  const user = req.user;
+
+  let order = null;
+  if (dbActive) {
+    try {
+      const orderRes = await pool.query('SELECT * FROM koperasi_order WHERE id = $1', [id]);
+      if (orderRes.rows.length > 0) {
+        order = orderRes.rows[0];
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  } else {
+    order = orderStore.find(o => o.id === id);
+  }
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
+  }
+
+  const orderDapurId = dbActive ? order.id_dapur : order.idDapur;
+
+  // Cek Otorisasi:
+  // - Jika status = SELESAI, boleh dilakukan oleh Koperasi, Admin, atau Dapur pemilik order
+  // - Selain itu (DIKIRIM, APPROVED), hanya boleh dilakukan oleh Koperasi atau Admin
+  if (status === 'SELESAI') {
+    if (user.role !== 'admin' && user.role !== 'koperasi' && user.id !== orderDapurId) {
+      return res.status(403).json({ success: false, error: 'Akses ditolak. Hanya pemilik pesanan atau koperasi yang bisa menyelesaikan.' });
+    }
+  } else {
+    if (user.role !== 'admin' && user.role !== 'koperasi') {
+      return res.status(403).json({ success: false, error: 'Akses ditolak. Khusus Koperasi / Admin.' });
+    }
+  }
 
   if (dbActive) {
     try {
+      // Kurangi stok di koperasi_katalog jika status diubah menjadi APPROVED
+      if (status === 'APPROVED' && order.status !== 'APPROVED' && order.status !== 'DIKIRIM' && order.status !== 'SELESAI') {
+        const itemsRes = await pool.query('SELECT * FROM koperasi_order_items WHERE order_id = $1', [id]);
+        for (const item of itemsRes.rows) {
+          await pool.query(
+            'UPDATE koperasi_katalog SET stok = GREATEST(0, stok - $1) WHERE nama_barang = $2',
+            [Number(item.qty), item.nama_barang]
+          );
+        }
+      }
+
       const updateRes = await pool.query(
         'UPDATE koperasi_order SET status = $1 WHERE id = $2 RETURNING *',
         [status, id]
       );
-      if (updateRes.rowCount === 0) {
-        return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
-      }
       
       const row = updateRes.rows[0];
       const itemsRes = await pool.query('SELECT * FROM koperasi_order_items WHERE order_id = $1', [id]);
@@ -1459,6 +2026,9 @@ app.post('/api/koperasi/order/:id/status', async (req, res) => {
           namaDapur: row.nama_dapur,
           totalHarga: Number(row.total_harga),
           status: row.status,
+          buktiPembayaran: row.bukti_pembayaran || null,
+          hariKirim: row.hari_kirim || null,
+          tanggalKirim: row.tanggal_kirim ? new Date(row.tanggal_kirim).toISOString().split('T')[0] : null,
           createdAt: row.created_at.toISOString(),
           items: itemsRes.rows.map(item => ({
             namaBarang: item.nama_barang,
@@ -1471,19 +2041,27 @@ app.post('/api/koperasi/order/:id/status', async (req, res) => {
       });
     } catch (err) {
       console.error('❌ Gagal update status order di DB:', err.message);
+      return res.status(500).json({ success: false, message: 'Gagal mengubah status.' });
     }
   }
 
   // Fallback in-memory
-  const order = orderStore.find(o => o.id === id);
-  if (!order) {
-    return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
+  if (status === 'APPROVED' && order.status !== 'APPROVED' && order.status !== 'DIKIRIM' && order.status !== 'SELESAI') {
+    for (const item of order.items) {
+      const prod = koperasiKatalog.find(p => p.namaBarang === item.namaBarang);
+      if (prod) prod.stok = Math.max(0, prod.stok - item.qty);
+    }
   }
   order.status = status;
-  res.json({ success: true, message: `Status pesanan diupdate menjadi ${status}.`, data: order });
+  res.json({ success: true, message: `Status pesanan diupdate menjadi ${status}.`, data: {
+    ...order,
+    buktiPembayaran: order.buktiPembayaran || null,
+    hariKirim: order.hariKirim || null,
+    tanggalKirim: order.tanggalKirim || null
+  } });
 });
 
-app.post('/api/anggaran/upload-rab', async (req, res) => {
+app.post('/api/anggaran/upload-rab', authenticateAdmin, async (req, res) => {
   try {
     const { mime_type, file_base64 } = req.body;
 

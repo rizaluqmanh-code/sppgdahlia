@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard Koperasi SPPG - Wholesaling Suite</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
   <style>
     body {
@@ -33,6 +34,66 @@
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-emerald-500 selection:text-slate-950">
+  <!-- Login Overlay -->
+  <div id="loginOverlay" class="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4">
+    <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-teal-500/10 blur-[120px] pointer-events-none"></div>
+    
+    <div class="w-full max-w-sm z-10">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-inner shadow-emerald-500/10 mb-4">
+          <span class="text-3xl">🏪</span>
+        </div>
+        <p class="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">
+          SPPG Control Suite
+        </p>
+        <h1 class="text-2xl font-black text-white mt-1.5 tracking-tight">Portal Admin Koperasi</h1>
+        <p class="text-xs text-slate-400 mt-2">Silakan masuk untuk mengelola gudang & pesanan.</p>
+      </div>
+
+      <div class="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/5 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
+        <form id="loginForm" class="space-y-4">
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 ml-1">
+              Username
+            </label>
+            <input
+              id="loginUsername"
+              type="text"
+              class="w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-slate-700"
+              placeholder="koperasi"
+              required
+            />
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 ml-1">
+              Password
+            </label>
+            <input
+              id="loginPassword"
+              type="password"
+              class="w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-slate-700"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          <div id="loginError" class="hidden bg-rose-950/30 border border-rose-900/30 rounded-xl px-4 py-3 flex items-start gap-2">
+            <span class="text-rose-400 text-xs">⚠️</span>
+            <p id="loginErrorMsg" class="text-[11px] text-rose-400 font-semibold"></p>
+          </div>
+
+          <button
+            type="submit"
+            class="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] rounded-xl py-3.5 text-xs font-bold uppercase tracking-widest text-white transition-all shadow-lg shadow-emerald-950/20 mt-2"
+          >
+            Masuk Sistem
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
   <!-- Header -->
   <header class="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
@@ -49,13 +110,16 @@
         <label class="block">
           <select id="statusFilter" onchange="filterOrders()" class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-emerald-500 transition-colors w-44">
             <option value="ALL">Semua Status</option>
-            <option value="PENDING">Baru (Pending)</option>
+            <option value="PENDING_PAYMENT">Belum Bayar (Pending)</option>
+            <option value="WAITING_APPROVAL">Persetujuan Bayar</option>
+            <option value="APPROVED">Disetujui (Siap Kirim)</option>
             <option value="DIKIRIM">Dalam Pengiriman</option>
             <option value="SELESAI">Selesai</option>
           </select>
         </label>
         <button onclick="loadOrders()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20 hover:shadow-emerald-600/10">Refresh Data</button>
         <a href="/admin.html" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-black px-4 py-2.5 rounded-xl transition-colors">Portal Yayasan</a>
+        <button onclick="handleLogout()" class="bg-rose-950/40 hover:bg-rose-900/30 text-rose-400 border border-rose-900/50 text-xs font-black px-4 py-2.5 rounded-xl transition-all">Keluar</button>
       </div>
     </div>
   </header>
@@ -65,7 +129,7 @@
     <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
         <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Total Omset Penjualan</p>
-        <p id="kpiOmset" class="text-2xl font-black mt-2 text-emerald-400">Rp 0</p>
+        <p id="kpiRevenue" class="text-2xl font-black mt-2 text-emerald-400">Rp 0</p>
         <p class="text-[10px] text-slate-500 mt-1">Akumulasi tagihan kulakan</p>
       </div>
       <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
@@ -76,13 +140,34 @@
       </div>
       <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
         <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Sedang Dikirim</p>
-        <p id="kpiDikirim" class="text-2xl font-black mt-2 text-white">0</p>
+        <p id="kpiTransit" class="text-2xl font-black mt-2 text-white">0</p>
         <p class="text-[10px] text-slate-500 mt-1">Menunggu diterima PIC Dapur</p>
       </div>
       <div class="glass rounded-2xl p-4 shadow-sm border border-slate-900 relative overflow-hidden">
         <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Pesanan Selesai</p>
-        <p id="kpiSelesai" class="text-2xl font-black mt-2 text-white">0</p>
+        <p id="kpiDone" class="text-2xl font-black mt-2 text-white">0</p>
         <p class="text-[10px] text-slate-500 mt-1">Barang sudah masuk stok dapur</p>
+    </section>
+
+    <!-- Charts Section -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="glass rounded-2xl p-5 border border-slate-900 shadow-sm space-y-3">
+        <h3 class="text-xs font-black uppercase tracking-wider text-slate-400">Status Penjualan (Volume PO)</h3>
+        <div class="relative h-60 w-full">
+          <canvas id="statusChart"></canvas>
+        </div>
+      </div>
+      <div class="glass rounded-2xl p-5 border border-slate-900 shadow-sm space-y-3">
+        <h3 class="text-xs font-black uppercase tracking-wider text-slate-400">Bahan Baku PO Terlaris (Kuantitas)</h3>
+        <div class="relative h-60 w-full">
+          <canvas id="materialChart"></canvas>
+        </div>
+      </div>
+      <div class="glass rounded-2xl p-5 border border-slate-900 shadow-sm space-y-3">
+        <h3 class="text-xs font-black uppercase tracking-wider text-slate-400">Nilai Penjualan Berhasil (Rupiah)</h3>
+        <div class="relative h-60 w-full">
+          <canvas id="revenueChart"></canvas>
+        </div>
       </div>
     </section>
 
@@ -95,7 +180,7 @@
           <span id="orderCountLabel" class="text-[10px] font-bold bg-slate-800 px-2 py-1 rounded text-slate-300">0 Pesanan</span>
         </div>
         
-        <div id="orderListContainer" class="space-y-4">
+        <div id="orderGrid" class="space-y-4">
           <!-- JS will render orders here -->
           <div class="glass rounded-2xl p-8 text-center text-xs text-slate-500">
             Mengambil data antrean pesanan...
@@ -105,13 +190,23 @@
 
       <!-- Cooperative Catalog & Inventory (Right) -->
       <div class="space-y-4">
-        <!-- Form Unggah Produk Baru -->
-        <h2 class="text-md font-black text-white">Unggah Produk Koperasi</h2>
+        <!-- Form Unggah & Edit Produk -->
+        <h2 id="formTitle" class="text-md font-black text-white">Unggah Produk Koperasi</h2>
         <div class="glass rounded-2xl p-5 shadow-sm border border-slate-900">
-          <form id="uploadProductForm" onsubmit="uploadProduct(event)" class="space-y-3">
+          <form id="prodForm" onsubmit="uploadProduct(event)" class="space-y-3">
             <div>
               <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nama Bahan/Barang</label>
               <input type="text" id="prodNama" required placeholder="Contoh: Daging Sapi Murni" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">SKU Produk</label>
+                <input type="text" id="prodSku" required placeholder="Contoh: DGG-SP-01" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Stok Awal Koperasi</label>
+                <input type="number" id="prodStok" required placeholder="Contoh: 100" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
+              </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
@@ -130,9 +225,26 @@
                 <input type="number" id="prodHarga" required placeholder="Contoh: 12000" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors">
               </div>
             </div>
-            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black py-2 rounded-xl transition-all shadow-lg shadow-emerald-950/20">
-              Unggah Produk
-            </button>
+            <div>
+              <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Foto Produk</label>
+              <div class="flex items-center gap-3">
+                <input type="file" id="prodFoto" accept="image/*" class="hidden" onchange="previewImage(event)">
+                <button type="button" onclick="document.getElementById('prodFoto').click()" class="bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-[11px] font-bold px-3 py-2 rounded-xl transition-all">Pilih Foto</button>
+                <span id="fotoLabel" class="text-[10px] text-slate-500 truncate max-w-[150px]">Belum ada foto</span>
+              </div>
+              <input type="hidden" id="prodFotoBase64">
+              <div id="fotoPreviewContainer" class="hidden mt-2">
+                <img id="fotoPreviewImg" src="" class="h-16 w-16 object-cover rounded-xl border border-slate-800">
+              </div>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button type="submit" id="btnSubmitForm" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-950/20">
+                Unggah Produk
+              </button>
+              <button type="button" id="btnCancelEdit" onclick="cancelEdit()" class="hidden bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black py-2.5 px-4 rounded-xl transition-colors">
+                Batal
+              </button>
+            </div>
           </form>
         </div>
 
@@ -147,178 +259,404 @@
   </main>
 
   <script>
+    const tokenKey = 'sppg_koperasi_token';
     const API_BASE = window.location.origin;
     let allOrders = [];
+
+    function checkAuth() {
+      const token = sessionStorage.getItem(tokenKey);
+      const overlay = document.getElementById('loginOverlay');
+      if (!overlay) return false;
+      if (!token) {
+        overlay.classList.remove('hidden');
+        return false;
+      }
+      overlay.classList.add('hidden');
+      return true;
+    }
+
+    async function secureFetch(url, options = {}) {
+      const token = sessionStorage.getItem(tokenKey);
+      const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(url, { ...options, headers });
+      if (res.status === 401 || res.status === 403) {
+        sessionStorage.removeItem(tokenKey);
+        checkAuth();
+        throw new Error('Sesi kedaluwarsa. Silakan login kembali.');
+      }
+      return res;
+    }
+
+    function handleLogout() {
+      if (confirm('Apakah Anda yakin ingin keluar dari dashboard koperasi?')) {
+        sessionStorage.removeItem(tokenKey);
+        checkAuth();
+      }
+    }
 
     // Helper formatting Rupiah
     function formatRp(value) {
       return 'Rp ' + Number(value || 0).toLocaleString('id-ID');
     }
 
+    let statusChartInstance = null;
+    let materialChartInstance = null;
+    let revenueChartInstance = null;
+
     async function loadOrders() {
       try {
-        // Fetch Orders
-        const ordRes = await fetch(`${API_BASE}/api/koperasi/order`);
+        const ordRes = await secureFetch(`${API_BASE}/api/koperasi/order`);
         const ordData = await ordRes.json();
         allOrders = ordData.success ? ordData.data : [];
 
-        // Fetch Catalog
-        const catRes = await fetch(`${API_BASE}/api/koperasi/katalog`);
+        const catRes = await secureFetch(`${API_BASE}/api/koperasi/katalog`);
         const catData = await catRes.json();
         const catalog = catData.success ? catData.data : [];
 
         renderCatalog(catalog);
         renderKPIs();
         filterOrders();
+        updateCharts(allOrders);
       } catch (err) {
         console.error('Gagal mengambil data koperasi:', err);
       }
     }
 
+    const getItemEmoji = (namaBarang) => {
+      const name = String(namaBarang || '').toLowerCase();
+      if (name.includes('beras')) return '🌾';
+      if (name.includes('telur')) return '🥚';
+      if (name.includes('minyak')) return '🛢️';
+      if (name.includes('bawang')) return '🧅';
+      if (name.includes('garam')) return '🧂';
+      if (name.includes('merica') || name.includes('lada')) return '🌶️';
+      if (name.includes('saos') || name.includes('saus') || name.includes('kecap')) return '🥫';
+      if (name.includes('daging') || name.includes('sapi') || name.includes('ayam')) return '🥩';
+      return '📦';
+    };
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
     function renderCatalog(catalog) {
       const container = document.getElementById('catalogList');
       if (!catalog.length) {
-        container.innerHTML = `<p class="text-xs text-slate-500 text-center py-4">Katalog kosong.</p>`;
+        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-6">Katalog kosong.</p>';
         return;
       }
-
-      container.innerHTML = catalog.map((item, idx) => `
-        <div class="flex justify-between items-center py-2.5 ${idx > 0 ? 'border-t border-slate-800' : ''}">
-          <div class="flex-1 min-w-0 pr-2">
-            <p class="text-xs font-black text-slate-200 truncate">${item.namaBarang}</p>
-            <p class="text-[9px] text-slate-500 font-bold">Kode: ${item.id}</p>
-          </div>
-          <div class="text-right flex items-center gap-3">
-            <div>
-              <p class="text-xs font-black text-emerald-400">${formatRp(item.hargaSatuan)}</p>
-              <p class="text-[9px] text-slate-500 font-bold">per ${item.satuan}</p>
+      container.innerHTML = catalog.map(item => {
+        const escapedNama = escapeHtml(item.namaBarang);
+        const escapedSku = escapeHtml(item.sku);
+        const escapedSatuan = escapeHtml(item.satuan);
+        const fotoUrl = item.foto || '';
+        
+        return `
+        <div class="flex justify-between items-center py-2.5 text-xs gap-3">
+          <div class="flex items-center gap-2.5 min-w-0">
+            ${item.foto 
+              ? `<img src="${item.foto}" class="h-9 w-9 object-cover rounded-xl border border-slate-800 shrink-0">` 
+              : `<div class="h-9 w-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-lg">${getItemEmoji(item.namaBarang)}</div>`
+            }
+            <div class="min-w-0">
+              <p class="font-black text-slate-200 truncate">${escapedNama} <span class="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded-full font-mono ml-1.5">${escapedSku || 'N/A'}</span></p>
+              <p class="text-[10px] text-slate-500 truncate">${item.id} &bull; ${formatRp(item.hargaSatuan)} / ${escapedSatuan} &bull; Stok: <strong class="text-emerald-400">${item.stok ?? 0} ${escapedSatuan}</strong></p>
             </div>
-            <button onclick="deleteProduct('${item.id}')" title="Hapus Produk" class="text-rose-500 hover:text-rose-400 p-1 hover:bg-rose-950/20 rounded-lg transition-colors">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="editProduct('${item.id}', '${escapedNama}', '${escapedSku}', ${item.stok}, '${escapedSatuan}', ${item.hargaSatuan}, '${fotoUrl}')" class="text-emerald-500 hover:text-emerald-400 font-bold">Edit</button>
+            <button onclick="deleteProduct('${item.id}')" class="text-rose-500 hover:text-rose-400 font-bold">Hapus</button>
           </div>
         </div>
-      `).join('');
-    }
-
-    async function uploadProduct(event) {
-      event.preventDefault();
-      const namaBarang = document.getElementById('prodNama').value;
-      const satuan = document.getElementById('prodSatuan').value;
-      const hargaSatuan = document.getElementById('prodHarga').value;
-
-      try {
-        const response = await fetch(`${API_BASE}/api/koperasi/katalog`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ namaBarang, satuan, hargaSatuan })
-        });
-        const resData = await response.json();
-        if (resData.success) {
-          alert('Produk berhasil diunggah!');
-          document.getElementById('uploadProductForm').reset();
-          loadOrders();
-        } else {
-          alert('Gagal unggah: ' + resData.message);
-        }
-      } catch (err) {
-        alert('Gagal mengunggah produk: ' + err.message);
-      }
-    }
-
-    async function deleteProduct(productId) {
-      if (!confirm('Apakah Anda yakin ingin menghapus produk ini dari katalog?')) return;
-      try {
-        const response = await fetch(`${API_BASE}/api/koperasi/katalog/${productId}`, {
-          method: 'DELETE'
-        });
-        const resData = await response.json();
-        if (resData.success) {
-          alert('Produk berhasil dihapus!');
-          loadOrders();
-        } else {
-          alert('Gagal menghapus: ' + resData.message);
-        }
-      } catch (err) {
-        alert('Gagal menghapus produk: ' + err.message);
-      }
+        `;
+      }).join('');
     }
 
     function renderKPIs() {
-      const omset = allOrders
-        .filter(o => o.status === 'SELESAI' || o.status === 'DIKIRIM')
-        .reduce((sum, o) => sum + o.totalHarga, 0);
-      
-      const pending = allOrders.filter(o => o.status === 'PENDING').length;
-      const dikirim = allOrders.filter(o => o.status === 'DIKIRIM').length;
-      const selesai = allOrders.filter(o => o.status === 'SELESAI').length;
+      const pending = allOrders.filter(o => o.status === 'WAITING_APPROVAL' || o.status === 'APPROVED');
+      const transit = allOrders.filter(o => o.status === 'DIKIRIM');
+      const done = allOrders.filter(o => o.status === 'SELESAI');
 
-      document.getElementById('kpiOmset').innerText = formatRp(omset);
-      document.getElementById('kpiPending').innerText = pending;
-      document.getElementById('kpiDikirim').innerText = dikirim;
-      document.getElementById('kpiSelesai').innerText = selesai;
+      document.getElementById('kpiPending').textContent = pending.length;
+      document.getElementById('kpiTransit').textContent = transit.length;
+      document.getElementById('kpiDone').textContent = done.length;
+
+      const revenue = allOrders.filter(o => o.status === 'SELESAI').reduce((sum, o) => sum + o.totalHarga, 0);
+      document.getElementById('kpiRevenue').textContent = formatRp(revenue);
+    }
+
+    function updateCharts(orders) {
+      // 1. Hitung volume (jumlah order)
+      const totalPoCount = orders.length;
+      const dibayarCount = orders.filter(o => 
+        o.status === 'APPROVED' || o.status === 'DIKIRIM' || o.status === 'SELESAI'
+      ).length;
+      const dikirimCount = orders.filter(o => 
+        o.status === 'DIKIRIM' || o.status === 'SELESAI'
+      ).length;
+
+      // 2. Hitung nilai nominal (Rupiah)
+      const totalPoRp = orders.reduce((sum, o) => sum + Number(o.totalHarga || 0), 0);
+      const dibayarRp = orders.filter(o => 
+        o.status === 'APPROVED' || o.status === 'DIKIRIM' || o.status === 'SELESAI'
+      ).reduce((sum, o) => sum + Number(o.totalHarga || 0), 0);
+      const dikirimRp = orders.filter(o => 
+        o.status === 'DIKIRIM' || o.status === 'SELESAI'
+      ).reduce((sum, o) => sum + Number(o.totalHarga || 0), 0);
+
+      // 3. Hitung kuantitas per bahan baku
+      const materialStats = {};
+      orders.forEach(order => {
+        order.items.forEach(item => {
+          const name = item.namaBarang;
+          if (!materialStats[name]) {
+            materialStats[name] = { qty: 0, satuan: item.satuan };
+          }
+          materialStats[name].qty += Number(item.qty || 0);
+        });
+      });
+
+      // Render Volume Chart
+      const statusCtx = document.getElementById('statusChart').getContext('2d');
+      if (statusChartInstance) {
+        statusChartInstance.destroy();
+      }
+      statusChartInstance = new Chart(statusCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Total PO Masuk', 'Berhasil Dibayar', 'Berhasil Dikirim'],
+          datasets: [{
+            label: 'Jumlah PO',
+            data: [totalPoCount, dibayarCount, dikirimCount],
+            backgroundColor: [
+              'rgba(148, 163, 184, 0.4)',
+              'rgba(16, 185, 129, 0.4)',
+              'rgba(59, 130, 246, 0.4)'
+            ],
+            borderColor: [
+              'rgba(148, 163, 184, 1)',
+              'rgba(16, 185, 129, 1)',
+              'rgba(59, 130, 246, 1)'
+            ],
+            borderWidth: 2,
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              titleColor: '#fff',
+              bodyColor: '#cbd5e1',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderWidth: 1
+            }
+          },
+          scales: {
+            y: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+            }
+          }
+        }
+      });
+
+      // Render Material Chart
+      const materialCtx = document.getElementById('materialChart').getContext('2d');
+      if (materialChartInstance) {
+        materialChartInstance.destroy();
+      }
+
+      const sortedMaterials = Object.entries(materialStats)
+        .sort((a, b) => b[1].qty - a[1].qty)
+        .slice(0, 7);
+
+      const sortedNames = sortedMaterials.map(entry => entry[0]);
+      const sortedQtys = sortedMaterials.map(entry => entry[1].qty);
+      const sortedSatuan = sortedMaterials.map(entry => entry[1].satuan);
+
+      materialChartInstance = new Chart(materialCtx, {
+        type: 'bar',
+        data: {
+          labels: sortedNames,
+          datasets: [{
+            label: 'Kuantitas',
+            data: sortedQtys,
+            backgroundColor: 'rgba(234, 179, 8, 0.4)',
+            borderColor: 'rgba(234, 179, 8, 1)',
+            borderWidth: 2,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              titleColor: '#fff',
+              bodyColor: '#cbd5e1',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderWidth: 1,
+              callbacks: {
+                label: function(context) {
+                  const idx = context.dataIndex;
+                  return context.raw + ' ' + sortedSatuan[idx];
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+            },
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+            }
+          }
+        }
+      });
+
+      // Render Revenue Chart
+      const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+      if (revenueChartInstance) {
+        revenueChartInstance.destroy();
+      }
+      revenueChartInstance = new Chart(revenueCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Total Nilai PO', 'Nilai Dibayar', 'Nilai Dikirim'],
+          datasets: [{
+            label: 'Total Rupiah',
+            data: [totalPoRp, dibayarRp, dikirimRp],
+            backgroundColor: [
+              'rgba(148, 163, 184, 0.4)',
+              'rgba(16, 185, 129, 0.4)',
+              'rgba(59, 130, 246, 0.4)'
+            ],
+            borderColor: [
+              'rgba(148, 163, 184, 1)',
+              'rgba(16, 185, 129, 1)',
+              'rgba(59, 130, 246, 1)'
+            ],
+            borderWidth: 2,
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              titleColor: '#fff',
+              bodyColor: '#cbd5e1',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderWidth: 1,
+              callbacks: {
+                label: function(context) {
+                  return 'Rp ' + Number(context.raw).toLocaleString('id-ID');
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { 
+                color: '#94a3b8', 
+                font: { family: 'Outfit' },
+                callback: function(value) {
+                  if (value >= 1000000) return 'Rp ' + (value / 1000000) + 'jt';
+                  if (value >= 1000) return 'Rp ' + (value / 1000) + 'rb';
+                  return 'Rp ' + value;
+                }
+              }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+            }
+          }
+        }
+      });
     }
 
     function filterOrders() {
-      const filterStatus = document.getElementById('statusFilter').value;
+      const filter = document.getElementById('statusFilter').value;
       let filtered = allOrders;
-
-      if (filterStatus !== 'ALL') {
-        filtered = allOrders.filter(o => o.status === filterStatus);
+      if (filter !== 'ALL') {
+        filtered = allOrders.filter(o => o.status === filter);
       }
-
-      document.getElementById('orderCountLabel').innerText = `${filtered.length} Pesanan`;
       renderOrders(filtered);
     }
 
     function renderOrders(orders) {
-      const container = document.getElementById('orderListContainer');
+      const container = document.getElementById('orderGrid');
       if (!orders.length) {
-        container.innerHTML = `
-          <div class="glass rounded-2xl p-8 text-center text-xs text-slate-500">
-            Tidak ada antrean pesanan kulakan saat ini.
-          </div>
-        `;
+        container.innerHTML = '<div class="col-span-full py-12 text-center text-slate-500 text-xs font-bold">Tidak ada pesanan masuk.</div>';
         return;
       }
 
       container.innerHTML = orders.map(order => {
+        const dateStr = new Date(order.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+        
         let statusBadge = '';
         let actionBtn = '';
 
-        if (order.status === 'PENDING') {
-          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">BARU (PENDING)</span>';
+        if (order.status === 'PENDING_PAYMENT') {
+          statusBadge = '<span class="px-2.5 py-1 rounded-lg text-[9px] font-black bg-slate-800 text-slate-400 border border-slate-700">BELUM BAYAR</span>';
+          actionBtn = '<span class="text-[10px] font-bold text-slate-500">Menunggu Pembayaran PIC</span>';
+        } else if (order.status === 'WAITING_APPROVAL') {
+          statusBadge = '<span class="px-2.5 py-1 rounded-lg text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">PERSETUJUAN BAYAR</span>';
           actionBtn = `
-            <button onclick="shipOrder('${order.id}')" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider px-4 py-2 rounded-xl shadow-lg transition-all">
-              Kirim Barang
-            </button>
+            <button onclick="openLightbox('${order.buktiPembayaran}', 'Bukti Pembayaran: ${order.namaDapur}')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-black px-3.5 py-1.5 rounded-lg mr-2">Lihat Bukti Bayar</button>
+            <button onclick="approvePayment('${order.id}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black px-3.5 py-1.5 rounded-lg">Setujui Pembayaran</button>
           `;
+        } else if (order.status === 'APPROVED') {
+          statusBadge = '<span class="px-2.5 py-1 rounded-lg text-[9px] font-black bg-teal-500/10 text-teal-400 border border-teal-500/20">SIAP KIRIM</span>';
+          actionBtn = `<button onclick="shipOrder('${order.id}')" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black px-3.5 py-1.5 rounded-lg">Kirim Barang</button>`;
         } else if (order.status === 'DIKIRIM') {
-          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/20">SEDANG DIKIRIM</span>';
-          actionBtn = '<span class="text-[10px] text-slate-400 italic">Menunggu konfirmasi penerimaan oleh PIC Dapur...</span>';
-        } else if (order.status === 'SELESAI') {
-          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">SELESAI</span>';
-          actionBtn = '<span class="text-[10px] text-emerald-400 font-bold">✓ Barang sudah masuk stok gudang dapur</span>';
+          statusBadge = '<span class="px-2.5 py-1 rounded-lg text-[9px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/20">DALAM PENGIRIMAN</span>';
+          actionBtn = '<span class="text-[10px] font-bold text-slate-500">Menunggu Diterima Dapur</span>';
+        } else {
+          statusBadge = '<span class="px-2.5 py-1 rounded-lg text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">SELESAI</span>';
+          actionBtn = '<span class="text-[10px] font-bold text-emerald-500">✓ Selesai &amp; Masuk Stok</span>';
         }
 
-        const dateStr = new Date(order.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
-
         return `
-          <div class="glass rounded-2xl p-5 shadow-sm border border-slate-900 space-y-4">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-900 pb-3">
+          <div class="glass rounded-2xl p-4 shadow-sm space-y-4 border border-slate-900">
+            <div class="flex justify-between items-start border-b border-slate-900 pb-3">
               <div>
                 <span class="text-[9px] font-bold text-slate-500 tracking-wider">ID ORDER: ${order.id}</span>
                 <h3 class="text-sm font-black text-white mt-0.5">${order.namaDapur}</h3>
                 <p class="text-[10px] text-slate-400">${dateStr}</p>
+                ${order.hariKirim ? `<p class="text-[10px] text-emerald-400 font-bold mt-1.5 flex items-center gap-1">🚚 Kirim: ${order.hariKirim}, ${new Date(order.tanggalKirim).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>` : ''}
               </div>
               <div>
                 ${statusBadge}
               </div>
             </div>
 
-            <!-- Items -->
             <div class="space-y-2">
               ${order.items.map(item => `
                 <div class="flex justify-between items-center text-xs text-slate-300">
@@ -328,13 +666,11 @@
               `).join('')}
             </div>
 
-            <!-- Total Pricing -->
             <div class="flex justify-between items-center border-t border-slate-900 pt-3">
               <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Tagihan</span>
               <span class="text-sm font-black text-emerald-400">${formatRp(order.totalHarga)}</span>
             </div>
 
-            <!-- Actions -->
             <div class="flex justify-end pt-2 border-t border-slate-900/50">
               ${actionBtn}
             </div>
@@ -346,7 +682,7 @@
     async function shipOrder(orderId) {
       if (!confirm('Kirim pesanan kulakan ini ke Dapur terkait?')) return;
       try {
-        const response = await fetch(`${API_BASE}/api/koperasi/order/${orderId}/status`, {
+        const response = await secureFetch(`${API_BASE}/api/koperasi/order/${orderId}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'DIKIRIM' })
@@ -363,10 +699,222 @@
       }
     }
 
-    // Load initial data
-    loadOrders();
-    // Poll updates every 10 seconds
-    setInterval(loadOrders, 10000);
-  </script>
-</body>
+    let isEditMode = false;
+    let editingProductId = null;
+
+    function previewImage(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      document.getElementById('fotoLabel').textContent = file.name;
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const base64 = e.target.result;
+        document.getElementById('prodFotoBase64').value = base64;
+        document.getElementById('fotoPreviewContainer').classList.remove('hidden');
+        document.getElementById('fotoPreviewImg').src = base64;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function editProduct(id, namaBarang, sku, stok, satuan, hargaSatuan, fotoUrl) {
+      isEditMode = true;
+      editingProductId = id;
+      
+      document.getElementById('formTitle').textContent = 'Edit Produk Koperasi';
+      document.getElementById('btnSubmitForm').textContent = 'Simpan Perubahan';
+      document.getElementById('btnCancelEdit').classList.remove('hidden');
+      
+      document.getElementById('prodNama').value = namaBarang;
+      document.getElementById('prodSku').value = sku;
+      document.getElementById('prodStok').value = stok;
+      document.getElementById('prodSatuan').value = satuan;
+      document.getElementById('prodHarga').value = hargaSatuan;
+      
+      document.getElementById('prodFotoBase64').value = '';
+      
+      if (fotoUrl) {
+        document.getElementById('fotoLabel').textContent = 'Foto tersedia (Klik Pilih Foto untuk ganti)';
+        document.getElementById('fotoPreviewContainer').classList.remove('hidden');
+        document.getElementById('fotoPreviewImg').src = fotoUrl;
+      } else {
+        document.getElementById('fotoLabel').textContent = 'Belum ada foto';
+        document.getElementById('fotoPreviewContainer').classList.add('hidden');
+        document.getElementById('fotoPreviewImg').src = '';
+      }
+      
+      document.getElementById('prodNama').focus();
+    }
+
+    function cancelEdit() {
+      isEditMode = false;
+      editingProductId = null;
+      
+      document.getElementById('formTitle').textContent = 'Unggah Produk Koperasi';
+      document.getElementById('btnSubmitForm').textContent = 'Unggah Produk';
+      document.getElementById('btnCancelEdit').classList.add('hidden');
+      
+      document.getElementById('prodForm').reset();
+      document.getElementById('prodFotoBase64').value = '';
+      document.getElementById('fotoLabel').textContent = 'Belum ada foto';
+      document.getElementById('fotoPreviewContainer').classList.add('hidden');
+      document.getElementById('fotoPreviewImg').src = '';
+    }
+
+    async function uploadProduct(event) {
+      event.preventDefault();
+      const namaBarang = document.getElementById('prodNama').value.trim();
+      const sku = document.getElementById('prodSku').value.trim();
+      const stok = document.getElementById('prodStok').value;
+      const satuan = document.getElementById('prodSatuan').value;
+      const hargaSatuan = document.getElementById('prodHarga').value;
+      const foto = document.getElementById('prodFotoBase64').value;
+
+      const url = isEditMode 
+        ? `${API_BASE}/api/koperasi/katalog/${editingProductId}`
+        : `${API_BASE}/api/koperasi/katalog`;
+      
+      const method = isEditMode ? 'PUT' : 'POST';
+
+      try {
+        const response = await secureFetch(url, {
+          method: method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ namaBarang, sku, stok, satuan, hargaSatuan, foto })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert(isEditMode ? 'Produk berhasil diperbarui!' : 'Produk berhasil diunggah!');
+          cancelEdit();
+          loadOrders();
+        } else {
+          alert('Gagal memproses produk: ' + data.message);
+        }
+      } catch (err) {
+        alert('Gagal memproses: ' + err.message);
+      }
+    }
+
+    async function deleteProduct(productId) {
+      if (!confirm('Hapus produk ini dari katalog koperasi?')) return;
+      try {
+        const response = await secureFetch(`${API_BASE}/api/koperasi/katalog/${productId}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('Produk berhasil dihapus!');
+          loadOrders();
+        } else {
+          alert('Gagal menghapus produk: ' + data.message);
+        }
+      } catch (err) {
+        alert('Gagal menghapus: ' + err.message);
+      }
+    }
+
+    async function approvePayment(orderId) {
+      if (!confirm('Setujui pembayaran untuk pesanan ini?')) return;
+      try {
+        const response = await secureFetch(`${API_BASE}/api/koperasi/order/${orderId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'APPROVED' })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('Pembayaran pesanan disetujui!');
+          loadOrders();
+        } else {
+          alert('Gagal menyetujui pembayaran: ' + data.message);
+        }
+      } catch (err) {
+        alert('Gagal memproses persetujuan: ' + err.message);
+      }
+    }
+
+    function openLightbox(src, caption) {
+      const modal = document.getElementById('lightbox');
+      const img = document.getElementById('lightboxImg');
+      const capt = document.getElementById('lightboxCaption');
+      
+      img.src = src;
+      capt.textContent = caption || 'Bukti Struk Transfer';
+      modal.classList.remove('hidden');
+    }
+
+    function closeLightbox() {
+      const modal = document.getElementById('lightbox');
+      modal.classList.add('hidden');
+    }
+
+    // DOM Ready Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      // Bind catalog upload submit
+      const prodForm = document.getElementById('prodForm');
+      if (prodForm) {
+        prodForm.addEventListener('submit', uploadProduct);
+      }
+
+      // Bind login overlay submit
+      const loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const usernameInput = document.getElementById('loginUsername').value;
+          const passwordInput = document.getElementById('loginPassword').value;
+          const errorDiv = document.getElementById('loginError');
+          const errorMsg = document.getElementById('loginErrorMsg');
+          
+          errorDiv.classList.add('hidden');
+          
+          try {
+            const res = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: usernameInput, password: passwordInput })
+            });
+            const data = await res.json();
+            
+            if (!res.ok || !data.success) {
+              throw new Error(data.message || 'Gagal login.');
+            }
+            
+            if (data.data.role !== 'koperasi' && data.data.role !== 'admin') {
+              throw new Error('Akses ditolak. Akun tidak memiliki hak akses Koperasi.');
+            }
+            
+            sessionStorage.setItem(tokenKey, data.token);
+            checkAuth();
+            loadOrders();
+          } catch (err) {
+            errorMsg.textContent = err.message;
+            errorDiv.classList.remove('hidden');
+          }
+        });
+      }
+
+      // Initial Auth Check and Load
+      if (checkAuth()) {
+        loadOrders();
+      }
+
+      // Poll updates every 15 seconds
+      setInterval(() => {
+        if (sessionStorage.getItem(tokenKey)) {
+          loadOrders().catch(() => {});
+        }
+      }, 15000);
+    });
+    </script>
+
+  <!-- Lightbox Modal untuk Bukti Bayar -->
+  <div id="lightbox" class="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 hidden" onclick="closeLightbox()">
+    <button class="absolute top-4 right-4 text-white text-3xl font-bold" onclick="closeLightbox()">&times;</button>
+    <img id="lightboxImg" src="" alt="Bukti Pembayaran" class="max-w-full max-h-[85vh] rounded-xl border border-white/10 shadow-2xl object-contain">
+    <p id="lightboxCaption" class="text-slate-400 text-xs font-bold mt-4 tracking-wider"></p>
+  </div>
+
+  </body>
 </html>
