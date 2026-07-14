@@ -337,6 +337,8 @@ function App() {
   });
 
   const [lastSubmit, setLastSubmit] = useState(null);
+  // State validasi inline — key: rowKey, value: array string pesan error
+  const [submitErrors, setSubmitErrors] = useState({});
   const [draftSavedAt, setDraftSavedAt] = useState(() => {
     // Cek apakah ada draft yang tersimpan saat app dibuka
     try {
@@ -1581,6 +1583,7 @@ function App() {
       }
 
       setLastSubmit(data.data);
+      setSubmitErrors({});  // Reset semua error setelah submit berhasil
       // Bersihkan draft setelah sukses kirim online
       setLaporanInput({});
       setFotoMasakan(null);
@@ -1984,11 +1987,17 @@ function App() {
                     setTimeout(() => updateInput(rowKey, 'sumber', 'KOPERASI'), 0);
                   }
 
+                  // Error state untuk card ini
+                  const rowErrors = submitErrors[rowKey] || [];
+                  const hasRowError = rowErrors.length > 0;
+
                   return (
                     <div key={rowKey} className={`bg-white rounded-2xl border p-4 shadow-sm space-y-3 ${
-                      (input.qtyRiil || input.hargaSatuanRiil)
-                        ? 'border-emerald-300 ring-1 ring-emerald-100'
-                        : 'border-slate-200'
+                      hasRowError
+                        ? 'border-red-400 ring-2 ring-red-100'
+                        : (input.qtyRiil || input.hargaSatuanRiil)
+                          ? 'border-emerald-300 ring-1 ring-emerald-100'
+                          : 'border-slate-200'
                     }`}>
                       <div className="flex justify-between gap-3 border-b border-slate-100 pb-2">
                         <div className="flex items-start gap-2">
@@ -2172,15 +2181,85 @@ function App() {
                       <p className={`text-[10px] font-bold rounded-lg p-2 ${deviasi > 10 ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-500'}`}>
                         Deviasi terhadap RAB: {Number.isFinite(deviasi) ? deviasi.toFixed(1) : '0.0'}%
                       </p>
+                      {/* Pesan error inline per card */}
+                      {hasRowError && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 space-y-1">
+                          {rowErrors.map((err, i) => (
+                            <p key={i} className="text-[10px] font-bold text-red-600 flex items-start gap-1.5">
+                              <span className="mt-0.5 flex-shrink-0">⚠️</span>{err}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })
               )}
               {activeBomList.length > 0 && (
-                <div className="pt-2">
+                <div className="pt-2 space-y-3">
+                  {/* Banner ringkasan error saat ada yang belum terisi */}
+                  {Object.values(submitErrors).some(e => e.length > 0) && (
+                    <div className="bg-red-600 text-white rounded-2xl px-4 py-3 flex items-start gap-3 shadow-md">
+                      <span className="text-xl flex-shrink-0">🚨</span>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wide">Laporan Belum Lengkap!</p>
+                        <p className="text-[10px] text-red-100 mt-0.5">
+                          {Object.values(submitErrors).flat().length} item belum diisi. Scroll ke atas dan perbaiki bahan yang ditandai merah.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <button
-                    onClick={() => setCurrentPage('review')}
-                    className="w-full bg-slate-900 text-white rounded-2xl py-4 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-colors"
+                    onClick={() => {
+                      // Jalankan validasi inline sebelum pindah halaman
+                      const newErrors = {};
+                      let hasAnyError = false;
+
+                      if (audit.rows.length === 0) {
+                        alert('Tidak ada data bahan RAB untuk hari ini. Pastikan RAB sudah dimuat dari Spreadsheet.');
+                        return;
+                      }
+
+                      audit.rows.forEach((row) => {
+                        const input = laporanInput[row.rowKey] || {};
+                        const isAmbilGudang = row.sumber === 'AMBIL_GUDANG';
+                        const errs = [];
+
+                        if (isAmbilGudang) {
+                          if (row.qtyRiil <= 0) errs.push('Kuantitas ambil gudang wajib diisi dan > 0.');
+                        } else {
+                          const receipts = input.receipts || [{
+                            id: 'REC-default',
+                            qty: input.qtyRiil,
+                            hargaSatuan: input.hargaSatuanRiil,
+                            foto: input.fotoNota
+                          }];
+                          const hasEmptyVal = receipts.some(r => !r.qty || toNumber(r.qty) <= 0 || !r.hargaSatuan || toNumber(r.hargaSatuan) <= 0);
+                          const hasMissingPhoto = receipts.some(r => !r.foto);
+                          if (hasEmptyVal) errs.push('Kuantitas & harga riil belum diisi (tidak boleh 0).');
+                          if (hasMissingPhoto) errs.push('Foto nota/kuitansi belum diupload.');
+                        }
+
+                        if (errs.length > 0) {
+                          newErrors[row.rowKey] = errs;
+                          hasAnyError = true;
+                        } else {
+                          newErrors[row.rowKey] = [];
+                        }
+                      });
+
+                      setSubmitErrors(newErrors);
+
+                      if (hasAnyError) {
+                        // Scroll ke atas agar user lihat highlight merah
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                      }
+
+                      // Semua valid — lanjut ke review
+                      setCurrentPage('review');
+                    }}
+                    className="w-full bg-slate-900 text-white rounded-2xl py-4 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all"
                   >
                     Lanjut ke Kirim Laporan →
                   </button>
