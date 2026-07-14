@@ -98,7 +98,11 @@ function fileToDataUrl(file) {
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error('Gagal memuat gambar untuk kompresi'));
+      console.warn('⚠️ Gagal kompresi gambar, fallback menggunakan FileReader biasa.');
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     };
 
     img.src = objectUrl;
@@ -798,18 +802,24 @@ function App() {
       }
     ];
 
-    const newReceipts = await Promise.all(currentReceipts.map(async (r) => {
-      if (r.id === receiptId) {
-        if (field === 'fotoFile') {
-          const encoded = await fileToDataUrl(value);
-          return { ...r, foto: encoded };
+    try {
+      const newReceipts = await Promise.all(currentReceipts.map(async (r) => {
+        if (r.id === receiptId) {
+          if (field === 'fotoFile') {
+            if (!value) return r; // jika user batal memilih file
+            const encoded = await fileToDataUrl(value);
+            return { ...r, foto: encoded };
+          }
+          return { ...r, [field]: value };
         }
-        return { ...r, [field]: value };
-      }
-      return r;
-    }));
+        return r;
+      }));
 
-    updateRowReceipts(rowKey, newReceipts);
+      updateRowReceipts(rowKey, newReceipts);
+    } catch (err) {
+      alert(`Gagal memproses foto nota: ${err.message}`);
+      console.error(err);
+    }
   };
 
   const updateInput = (rowKey, field, value) => {
@@ -941,46 +951,51 @@ function App() {
 
   const handleBulkFotoNota = async (file) => {
     if (!file || selectedRowsForBulkNota.length === 0) return;
-    const encoded = await fileToDataUrl(file);
+    try {
+      const encoded = await fileToDataUrl(file);
 
-    const nextInput = { ...laporanInput };
-    selectedRowsForBulkNota.forEach((key) => {
-      const parts = key.split('_');
-      const idx = Number(parts[0]);
-      const item = activeBomList[idx] || {};
-      const currentInput = nextInput[key] || {};
+      const nextInput = { ...laporanInput };
+      selectedRowsForBulkNota.forEach((key) => {
+        const parts = key.split('_');
+        const idx = Number(parts[0]);
+        const item = activeBomList[idx] || {};
+        const currentInput = nextInput[key] || {};
 
-      let updatedReceipts = undefined;
-      if (currentInput.receipts && currentInput.receipts.length > 0) {
-        updatedReceipts = currentInput.receipts.map(r => ({
-          ...r,
-          foto: encoded
-        }));
-      } else {
-        updatedReceipts = [
-          {
-            id: 'REC-default',
-            qty: currentInput.qtyRiil !== undefined ? currentInput.qtyRiil : item.qtyRencana,
-            hargaSatuan: currentInput.hargaSatuanRiil !== undefined ? currentInput.hargaSatuanRiil : item.hargaRab,
+        let updatedReceipts = undefined;
+        if (currentInput.receipts && currentInput.receipts.length > 0) {
+          updatedReceipts = currentInput.receipts.map(r => ({
+            ...r,
             foto: encoded
-          }
-        ];
-      }
+          }));
+        } else {
+          updatedReceipts = [
+            {
+              id: 'REC-default',
+              qty: currentInput.qtyRiil !== undefined ? currentInput.qtyRiil : item.qtyRencana,
+              hargaSatuan: currentInput.hargaSatuanRiil !== undefined ? currentInput.hargaSatuanRiil : item.hargaRab,
+              foto: encoded
+            }
+          ];
+        }
 
-      nextInput[key] = {
-        qtyRiil: item.qtyRencana || '',
-        hargaSatuanRiil: item.hargaRab || '',
-        totalRiil: (item.qtyRencana || 0) * (item.hargaRab || 0),
-        sumber: 'KOPERASI',
-        ...currentInput,
-        fotoNota: JSON.stringify(updatedReceipts),
-        receipts: updatedReceipts
-      };
-    });
+        nextInput[key] = {
+          qtyRiil: item.qtyRencana || '',
+          hargaSatuanRiil: item.hargaRab || '',
+          totalRiil: (item.qtyRencana || 0) * (item.hargaRab || 0),
+          sumber: 'KOPERASI',
+          ...currentInput,
+          fotoNota: JSON.stringify(updatedReceipts),
+          receipts: updatedReceipts
+        };
+      });
 
-    setLaporanInput(nextInput);
-    setSelectedRowsForBulkNota([]);
-    alert(`Berhasil menerapkan foto nota ke ${selectedRowsForBulkNota.length} bahan terpilih.`);
+      setLaporanInput(nextInput);
+      setSelectedRowsForBulkNota([]);
+      alert(`Berhasil menerapkan foto nota ke ${selectedRowsForBulkNota.length} bahan terpilih.`);
+    } catch (err) {
+      alert(`Gagal memproses foto nota: ${err.message}`);
+      console.error(err);
+    }
   };
 
   const handleFotoMasakan = async (file) => {
