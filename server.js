@@ -834,6 +834,33 @@ app.post('/api/laporan', authenticateToken, async (req, res) => {
     return res.status(400).json({ success: false, message: 'Minimal satu item laporan wajib dikirim.' });
   }
 
+  const idDapur = payload.idDapur || payload.dapur;
+  const tanggalInput = formatDateKey(payload.tanggalInput);
+
+  // Cek apakah laporan sudah ada untuk tanggal & dapur yang sama
+  if (dbActive) {
+    try {
+      const checkRes = await pool.query(
+        'SELECT id FROM laporan WHERE id_dapur = $1 AND tanggal_input = $2',
+        [idDapur, tanggalInput]
+      );
+      if (checkRes.rows.length > 0) {
+        const existingId = checkRes.rows[0].id;
+        console.log(`ℹ️ Menghapus laporan lama (${existingId}) untuk Dapur ${idDapur} tanggal ${tanggalInput} untuk ditimpa.`);
+        await pool.query('DELETE FROM laporan WHERE id = $1', [existingId]);
+      }
+    } catch (err) {
+      console.error('❌ Gagal memeriksa/menghapus laporan lama di DB:', err.message);
+    }
+  } else {
+    // In-memory fallback
+    const existingIdx = laporanStore.findIndex(l => l.idDapur === idDapur && l.tanggalInput === tanggalInput);
+    if (existingIdx > -1) {
+      console.log(`ℹ️ Menghapus laporan lama (${laporanStore[existingIdx].id}) di RAM untuk ditimpa.`);
+      laporanStore.splice(existingIdx, 1);
+    }
+  }
+
   const laporanId = `LAP-${Date.now()}`;
 
   // Simpan foto nota biner ke disk secara fisik

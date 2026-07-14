@@ -337,6 +337,7 @@ function App() {
   });
 
   const [lastSubmit, setLastSubmit] = useState(null);
+  const [serverError, setServerError] = useState(null);
   // State validasi inline — key: rowKey, value: array string pesan error
   const [submitErrors, setSubmitErrors] = useState({});
   const [draftSavedAt, setDraftSavedAt] = useState(() => {
@@ -1521,6 +1522,9 @@ function App() {
     }
 
     setIsLoading(true);
+    setServerError(null);
+    setLastSubmit(null);
+
     const payload = {
       idDapur: sessionDapur.id,
       namaDapur: sessionDapur.nama,
@@ -1582,7 +1586,8 @@ function App() {
         }
       }
 
-      setLastSubmit(data.data);
+      setLastSubmit(data.data || { id: data.id || `LAP-${Date.now()}`, ...payload });
+      setServerError(null);
       setSubmitErrors({});  // Reset semua error setelah submit berhasil
       // Bersihkan draft setelah sukses kirim online
       setLaporanInput({});
@@ -1606,9 +1611,11 @@ function App() {
         localStorage.removeItem('sppg_laporan_draft');
         localStorage.removeItem('sppg_foto_masakan_draft');
 
+        setServerError('Koneksi terputus. Laporan Anda disimpan di memori HP dan akan otomatis dikirim saat online kembali.');
         alert('Anda sedang offline atau koneksi ke server Express terputus. Laporan Anda telah disimpan dengan aman di memori HP dan akan otomatis dikirimkan ke server ketika internet aktif kembali.');
         setCurrentPage('beranda');
       } else {
+        setServerError(error.message);
         alert(`Gagal kirim laporan: ${error.message}`);
       }
     } finally {
@@ -2270,6 +2277,16 @@ function App() {
 
           {currentPage === 'review' && (
             <section className="p-4 space-y-4">
+              {serverError && (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-1.5 shadow-sm">
+                  <p className="text-xs font-black text-rose-800 flex items-center gap-1.5">
+                    <span>⚠️</span> Gagal Mengirim Laporan
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-slate-800 font-bold">{serverError}</p>
+                  <p className="text-[9px] text-rose-500 font-black uppercase tracking-wider">Silakan periksa koneksi atau kelengkapan data lalu coba lagi</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <MetricCard label="Total RAB" value={formatRp(audit.totalRab)} />
                 <MetricCard label="Total Riil" value={formatRp(audit.totalRiil)} tone={audit.totalRiil > audit.totalRab ? 'red' : 'emerald'} />
@@ -2291,8 +2308,8 @@ function App() {
               {lastSubmit && (
                 <div className="space-y-3">
                   <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2">
-                    <p className="text-xs font-black text-emerald-800">Laporan terkirim: {lastSubmit.id}</p>
-                    <p className="text-[10px] text-emerald-700">Audit lokal & data Sheets otomatis diperbarui.</p>
+                    <p className="text-xs font-black text-emerald-800">✓ Laporan Berhasil Dikirim / Diperbarui: {lastSubmit.id}</p>
+                    <p className="text-[10px] text-emerald-750 font-bold">Data audit dan Sheets otomatis terupdate di server.</p>
                   </div>
                   
                   {/* AI Koperasi Signal Card */}
